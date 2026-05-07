@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:LP-100A-App}",
+            "name": "Debug LP-100A-App",
+            "target": "LP-100A-App",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug LP-100A-App"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:LP-100A-App}",
+            "name": "Release LP-100A-App",
+            "target": "LP-100A-App",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release LP-100A-App"
+        }
+    ]
+}
