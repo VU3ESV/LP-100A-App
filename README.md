@@ -122,7 +122,11 @@ TODO item.
   `telemetry` / `heartbeat` / `status` / `ack` server frames, `command` /
   `resync` client frames.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the detailed architecture review.
+- [**User manual**](docs/USER_MANUAL.md) — installation, first-launch
+  setup, view-by-view tour, keyboard shortcuts, troubleshooting.
+- [**Architecture review**](ARCHITECTURE.md) — layered design,
+  concurrency model, connection lifecycle, risks.
+- [**Proposal**](PROPOSAL.md) — original design rationale.
 
 ## Project layout
 
