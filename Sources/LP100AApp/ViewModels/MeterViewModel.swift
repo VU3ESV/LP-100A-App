@@ -14,6 +14,17 @@ final class MeterViewModel: ObservableObject {
     @Published var connection: WSClient.ConnectionState = .disconnected
     @Published var statusBanner: String?
     @Published var allowControl: Bool = true
+    @Published var serverURLString: String = ""
+    @Published var connectionSheetOpen: Bool = false
+    @Published var lastConnectError: String?
+
+    /// True once the user has entered a server URL — drives whether the
+    /// connection sheet opens automatically on launch.
+    var hasConfiguredServer: Bool {
+        guard let url = URL(string: serverURLString),
+              url.host?.isEmpty == false else { return false }
+        return true
+    }
 
     // View cycle (mirrors VIEWS in the web client)
     @Published var views: [String] = ["normal", "vector"]
@@ -51,6 +62,8 @@ final class MeterViewModel: ObservableObject {
 
     func start(serverURL: URL) async {
         log.debug("Starting against \(serverURL.absoluteString, privacy: .public)")
+        serverURLString = serverURL.absoluteString
+        lastConnectError = nil
         let cfg = ConfigClient(baseURL: serverURL)
         configClient = cfg
 
@@ -76,8 +89,15 @@ final class MeterViewModel: ObservableObject {
     }
 
     func reconnect(serverURL: URL) async {
+        serverURLString = serverURL.absoluteString
         await stop()
         await start(serverURL: serverURL)
+    }
+
+    func disconnect() async {
+        await stop()
+        connection = .disconnected
+        snapshot = nil
     }
 
     func stop() async {
@@ -85,6 +105,29 @@ final class MeterViewModel: ObservableObject {
         listenTask = nil
         await ws?.stop()
         ws = nil
+    }
+
+    enum ConnectionTestResult: Equatable {
+        case ok
+        case failure(String)
+    }
+
+    /// Probe the server's `/healthz` endpoint. Used by the Connect sheet's
+    /// "Test connection" button.
+    func testConnection(urlString: String) async -> ConnectionTestResult {
+        guard let url = URL(string: urlString), url.host?.isEmpty == false else {
+            return .failure("Invalid URL")
+        }
+        let probe = url.appendingPathComponent("/healthz")
+        do {
+            let (_, resp) = try await URLSession.shared.data(from: probe)
+            if let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                return .ok
+            }
+            return .failure("Server returned non-2xx")
+        } catch {
+            return .failure(error.localizedDescription)
+        }
     }
 
     // MARK: - Commands

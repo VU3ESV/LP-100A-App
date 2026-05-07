@@ -8,7 +8,7 @@ import UserNotifications
 struct LP100AApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var vm = MeterViewModel()
-    @AppStorage("serverURL") private var serverURL: String = "http://localhost:8088"
+    @AppStorage("serverURL") private var serverURL: String = ""
     @AppStorage("menuBarItemEnabled") private var menuBarEnabled: Bool = true
 
     var body: some Scene {
@@ -16,11 +16,13 @@ struct LP100AApp: App {
             ContentView(vm: vm)
                 .task { await bootstrap() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                    vm.resync()
+                    if vm.connection == .connected { vm.resync() }
                 }
                 .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
                     Task {
-                        if let u = URL(string: serverURL) { await vm.reconnect(serverURL: u) }
+                        if let u = URL(string: serverURL), u.host?.isEmpty == false {
+                            await vm.reconnect(serverURL: u)
+                        }
                     }
                 }
         }
@@ -28,15 +30,14 @@ struct LP100AApp: App {
         .windowResizability(.contentMinSize)
 
         Settings {
-            PreferencesView(onChange: { url in
-                Task { await vm.reconnect(serverURL: url) }
-            })
+            PreferencesView(vm: vm)
         }
 
         MenuBarExtra(isInserted: $menuBarEnabled) {
             MenuBarContent(
                 vm: vm,
                 onShowMain: { showMainWindow() },
+                onConnect: { vm.connectionSheetOpen = true },
                 onQuit: { NSApp.terminate(nil) }
             )
         } label: {
@@ -47,8 +48,11 @@ struct LP100AApp: App {
 
     private func bootstrap() async {
         requestNotificationPermission()
-        if let url = URL(string: serverURL) {
+        if let url = URL(string: serverURL), url.host?.isEmpty == false {
             await vm.start(serverURL: url)
+        } else {
+            // First launch — open the Connect sheet automatically.
+            vm.connectionSheetOpen = true
         }
     }
 
@@ -61,6 +65,22 @@ struct LP100AApp: App {
     @CommandsBuilder
     private var menuCommands: some Commands {
         CommandGroup(replacing: .newItem) { }
+
+        CommandGroup(after: .appSettings) {
+            Button("Connect to Server…") { vm.connectionSheetOpen = true }
+                .keyboardShortcut("k", modifiers: [.command])
+            Button(vm.connection == .connected ? "Disconnect" : "Reconnect") {
+                if vm.connection == .connected {
+                    Task { await vm.disconnect() }
+                } else if let url = URL(string: serverURL), url.host?.isEmpty == false {
+                    Task { await vm.reconnect(serverURL: url) }
+                } else {
+                    vm.connectionSheetOpen = true
+                }
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+        }
+
         CommandMenu("View") {
             Button("Normal") { vm.setView(0) }
                 .keyboardShortcut("1", modifiers: [.command])
@@ -72,18 +92,19 @@ struct LP100AApp: App {
             Button("Resync") { vm.resync() }
                 .keyboardShortcut("r", modifiers: [.command])
         }
+
         CommandMenu("Meter") {
-            Button("Mode") { vm.sendMode() }
+            Button("Cycle Mode") { vm.sendMode() }
                 .keyboardShortcut("m", modifiers: [.command])
-            Button("Alarm Step") { vm.sendAlarm() }
+            Button("Step Alarm Setpoint") { vm.sendAlarm() }
                 .keyboardShortcut("a", modifiers: [.command])
-            Button("Peak / Avg / Tune") { vm.sendPeak() }
+            Button("Toggle Peak / Avg / Tune") { vm.sendPeak() }
                 .keyboardShortcut("p", modifiers: [.command])
         }
     }
 
     private func showMainWindow() {
-        if let win = NSApp.windows.first(where: { $0.contentView != nil && $0.title.isEmpty == false || $0.styleMask.contains(.titled) }) {
+        if let win = NSApp.windows.first(where: { $0.styleMask.contains(.titled) && $0.contentView != nil }) {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         } else {
@@ -94,7 +115,6 @@ struct LP100AApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Keep app alive while menu-bar item is enabled.
         let menuBar = UserDefaults.standard.object(forKey: "menuBarItemEnabled") as? Bool ?? true
         return !menuBar
     }

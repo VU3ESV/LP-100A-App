@@ -1,7 +1,6 @@
 import SwiftUI
 
 // Vector impedance view: |Z|, phase, R, X cells + polar compass.
-// Mirrors .view[data-view="vector"] in the web client.
 struct VectorView: View {
     var snapshot: Telemetry?
 
@@ -15,19 +14,19 @@ struct VectorView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 24) {
-            VStack(spacing: 14) {
-                HStack(spacing: 22) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 16) {
                     cell(label: "|Z|", value: format(z, 1), unit: "Ω")
                     cell(label: "Phase", value: format(phase, 1), unit: "°")
                 }
-                HStack(spacing: 22) {
+                HStack(spacing: 16) {
                     cell(label: "R (resistive)", value: format(r, 1), unit: "Ω")
                     cell(label: "X (reactive)",
                          value: (x >= 0 ? "+" : "") + format(x, 1),
                          unit: "Ω")
                 }
                 fullCell(label: "SWR · |Γ| reflection",
-                         value: "\(format(swr, 2)) · |Γ| \(format(gamma, 3))")
+                         value: "\(format(swr, 2))  ·  |Γ| \(format(gamma, 3))")
             }
             CompassView(z: z, phaseDeg: phase)
                 .frame(width: 220, height: 220)
@@ -36,47 +35,47 @@ struct VectorView: View {
 
     private func cell(label: String, value: String, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.6)
-                .foregroundColor(Tokens.label)
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(value)
-                    .font(.system(size: 24, weight: .bold, design: .monospaced))
-                    .foregroundColor(Tokens.accent)
+                    .font(.system(size: 24, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.tint)
+                    .monospacedDigit()
                 Text(unit)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(Tokens.label)
+                    .font(.system(.subheadline, design: .monospaced))
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
+        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
+        .background(
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(Tokens.dashed, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                .fill(Color.secondary.opacity(0.06))
         )
     }
 
     private func fullCell(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.6)
-                .foregroundColor(Tokens.label)
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 28, weight: .bold, design: .monospaced))
-                .foregroundColor(Tokens.swrFg)
+                .font(.system(size: 24, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.primary)
+                .monospacedDigit()
         }
-        .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
+        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
+        .background(
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(Tokens.dashed, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                .fill(Color.secondary.opacity(0.06))
         )
     }
 
     private func format(_ v: Double, _ digits: Int) -> String {
-        guard !v.isNaN else { return "--" }
+        guard !v.isNaN else { return "—" }
         return String(format: "%.\(digits)f", v)
     }
 }
@@ -91,49 +90,39 @@ private struct CompassView: View {
             let outerR = min(size.width, size.height) / 2
             let ringR = outerR * 0.64
 
-            // Background
             let bg = Path(ellipseIn: CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5))
-            ctx.fill(bg, with: .radialGradient(
-                Gradient(colors: [Color(hex: 0x0a0e12), Color(hex: 0x06080a)]),
-                center: center, startRadius: 0, endRadius: outerR))
-            ctx.stroke(bg, with: .color(Tokens.dashed), lineWidth: 1)
+            ctx.fill(bg, with: .color(Color.secondary.opacity(0.05)))
+            ctx.stroke(bg, with: .color(Color.secondary.opacity(0.4)), lineWidth: 1)
 
-            // Cross axes
             var axes = Path()
             axes.move(to: CGPoint(x: outerR * 0.16, y: center.y))
             axes.addLine(to: CGPoint(x: size.width - outerR * 0.16, y: center.y))
             axes.move(to: CGPoint(x: center.x, y: outerR * 0.16))
             axes.addLine(to: CGPoint(x: center.x, y: size.height - outerR * 0.16))
-            ctx.stroke(axes, with: .color(Tokens.grid), lineWidth: 1)
+            ctx.stroke(axes, with: .color(Color.secondary.opacity(0.3)), lineWidth: 1)
 
-            // Inner ring (dashed)
             let ring = Path(ellipseIn: CGRect(
                 x: center.x - ringR, y: center.y - ringR,
                 width: ringR * 2, height: ringR * 2))
-            ctx.stroke(ring, with: .color(Tokens.dashed),
+            ctx.stroke(ring, with: .color(Color.secondary.opacity(0.35)),
                        style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
-            // Vector tip
             let phRad = phaseDeg * .pi / 180.0
             let norm = min(1.0, z / 100.0)
             let tipX = norm * cos(phRad) * Double(ringR)
             let tipY = -norm * sin(phRad) * Double(ringR)
             let tip = CGPoint(x: center.x + tipX, y: center.y + tipY)
 
-            // Needle
             var needle = Path()
             needle.move(to: center)
             needle.addLine(to: tip)
-            ctx.stroke(needle, with: .linearGradient(
-                Gradient(colors: [Color.clear, Tokens.accent]),
-                startPoint: center, endPoint: tip), lineWidth: 2)
+            ctx.stroke(needle, with: .color(.accentColor), lineWidth: 2)
 
-            // Tip dot
             let dotR: CGFloat = 4
             let dotPath = Path(ellipseIn: CGRect(
                 x: tip.x - dotR, y: tip.y - dotR,
                 width: dotR * 2, height: dotR * 2))
-            ctx.fill(dotPath, with: .color(Tokens.peak))
+            ctx.fill(dotPath, with: .color(.accentColor))
         }
         .overlay(alignment: .trailing) { axisLabel("+R").padding(.trailing, 4) }
         .overlay(alignment: .leading) { axisLabel("−R").padding(.leading, 4) }
@@ -143,8 +132,7 @@ private struct CompassView: View {
 
     private func axisLabel(_ s: String) -> some View {
         Text(s)
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-            .tracking(1.0)
-            .foregroundColor(Tokens.label)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundStyle(.secondary)
     }
 }

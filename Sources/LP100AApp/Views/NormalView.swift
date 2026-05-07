@@ -1,7 +1,8 @@
 import SwiftUI
 
-// Normal view: PWR + SWR bargraphs on the left, big numeric readouts on
-// the right. Mirrors .view[data-view="normal"] in the web client.
+// Power & SWR readouts. The bargraph fills retain functional color
+// (teal / yellow / red) but everything around them uses system colors so
+// the panel feels native in light or dark mode.
 struct NormalView: View {
     var snapshot: Telemetry?
     var peakPwr: Double
@@ -9,16 +10,12 @@ struct NormalView: View {
 
     var body: some View {
         let d = snapshot
-        HStack(alignment: .top, spacing: 18) {
-            VStack(spacing: 14) {
+        HStack(alignment: .top, spacing: 24) {
+            VStack(spacing: 18) {
                 pwrBar(d: d)
                 swrBar(d: d)
             }
-            DashedDivider()
-                .frame(width: 1)
-                .frame(maxHeight: .infinity)
-                .rotationEffect(.degrees(90))
-                .frame(width: 1)
+            Divider()
             readouts(d: d)
                 .frame(minWidth: 180, idealWidth: 220, maxWidth: 240)
         }
@@ -31,24 +28,20 @@ struct NormalView: View {
         let frac = max > 0 ? pwr / max : 0
         let peakFrac = max > 0 ? peakPwr / max : 0
         let suffix = PowerModeSuffix.suffix(for: d?.mode ?? .average)
-        let valueText = d.map { String(format: "%.1f \(suffix)", $0.powerW) } ?? "--"
-        let scaleLabel = "\(range.rawValue.lowercased()) · 0–\(Int(max)) W"
+        let valueText = d.map { String(format: "%.1f \(suffix)", $0.powerW) } ?? "—"
+        let scaleLabel = "\(range.rawValue.capitalized) · 0–\(Int(max)) W"
 
-        return VStack(spacing: 4) {
-            HStack(alignment: .lastTextBaseline) {
-                Text("PWR")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundColor(Tokens.accent)
-                    .frame(width: 36, alignment: .leading)
-                Text(scaleLabel.uppercased())
-                    .font(.system(size: 11))
-                    .tracking(1.0)
-                    .foregroundColor(Tokens.label)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Power")
+                    .font(.subheadline.weight(.semibold))
+                Text(scaleLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(valueText)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(Tokens.swrFg)
+                    .font(.system(.subheadline, design: .monospaced))
+                    .foregroundStyle(.primary)
             }
             BargraphView(
                 fillFraction: frac,
@@ -68,23 +61,19 @@ struct NormalView: View {
             if swr >= SWRScale.warnThreshold { return .warn }
             return .normal
         }()
-        let valueText = d.map { String(format: "%.2f", $0.swr) } ?? "--"
+        let valueText = d.map { String(format: "%.2f", $0.swr) } ?? "—"
 
-        return VStack(spacing: 4) {
-            HStack(alignment: .lastTextBaseline) {
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
                 Text("SWR")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundColor(Tokens.accent)
-                    .frame(width: 36, alignment: .leading)
+                    .font(.subheadline.weight(.semibold))
                 Text("1.0 → 5.0")
-                    .font(.system(size: 11))
-                    .tracking(1.0)
-                    .foregroundColor(Tokens.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(valueText)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(Tokens.swrFg)
+                    .font(.system(.subheadline, design: .monospaced))
+                    .foregroundStyle(.primary)
             }
             BargraphView(
                 fillFraction: frac,
@@ -97,50 +86,49 @@ struct NormalView: View {
 
     private func readouts(d: Telemetry?) -> some View {
         VStack(alignment: .trailing, spacing: 18) {
-            VStack(alignment: .trailing, spacing: 4) {
-                let pwr = d.map { String(format: "%.1f", $0.powerW) } ?? "--"
-                let unit = PowerModeSuffix.suffix(for: d?.mode ?? .average)
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text(pwr)
-                        .font(.system(size: 44, weight: .bold, design: .monospaced))
-                        .foregroundColor(Tokens.power)
-                        .shadow(color: Tokens.powerGlow, radius: 8)
-                        .tracking(-1)
-                    Text(unit == "w" || unit == "W" ? "\(unit)" : unit)
-                        .font(.system(size: 18, weight: .bold, design: .monospaced))
-                        .foregroundColor(Tokens.power)
-                }
-                let dbw = d.map { String(format: "%.1f", $0.dbw) } ?? "--"
-                let dbm = d.map { String(format: "%.1f", $0.dbm) } ?? "--"
-                Text("\(dbw) dBW · \(dbm) dBm".uppercased())
-                    .font(.system(size: 11))
-                    .tracking(1.0)
-                    .foregroundColor(Tokens.label)
-            }
-            VStack(alignment: .trailing, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text("SWR")
-                        .font(.system(size: 14, weight: .semibold))
-                        .tracking(1.0)
-                        .foregroundColor(Tokens.label)
-                    Text(d.map { String(format: "%.2f", $0.swr) } ?? "--")
-                        .font(.system(size: 30, weight: .bold, design: .monospaced))
-                        .foregroundColor(Tokens.swrFg)
-                        .shadow(color: Tokens.swrFg.opacity(0.18), radius: 6)
-                }
-                let z = d.map { String(format: "%.1f", $0.zOhm) } ?? "--"
-                let phase = d.map { String(format: "%.1f", $0.phaseDeg) } ?? "--"
-                HStack(spacing: 0) {
-                    Text("Z ").foregroundColor(Tokens.label)
-                    Text(z).foregroundColor(Tokens.swrFg)
-                    Text(" Ω · ∠ ").foregroundColor(Tokens.label)
-                    Text(phase).foregroundColor(Tokens.swrFg)
-                    Text("°").foregroundColor(Tokens.label)
-                }
-                .font(.system(size: 11, design: .monospaced))
-                .tracking(0.8)
-            }
+            powerReadout(d: d)
+            swrReadout(d: d)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func powerReadout(d: Telemetry?) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            let pwr = d.map { String(format: "%.1f", $0.powerW) } ?? "—"
+            let unit = PowerModeSuffix.suffix(for: d?.mode ?? .average)
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(pwr)
+                    .font(.system(size: 44, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.tint)
+                    .monospacedDigit()
+                Text(unit)
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.tint.opacity(0.8))
+            }
+            let dbw = d.map { String(format: "%.1f", $0.dbw) } ?? "—"
+            let dbm = d.map { String(format: "%.1f", $0.dbm) } ?? "—"
+            Text("\(dbw) dBW · \(dbm) dBm")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func swrReadout(d: Telemetry?) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text("SWR")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Text(d.map { String(format: "%.2f", $0.swr) } ?? "—")
+                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            }
+            let z = d.map { String(format: "%.1f", $0.zOhm) } ?? "—"
+            let phase = d.map { String(format: "%.1f", $0.phaseDeg) } ?? "—"
+            Text("Z \(z) Ω · ∠ \(phase)°")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
     }
 }

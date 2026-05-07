@@ -1,7 +1,6 @@
 import SwiftUI
 
-// Compact glance shown in NSStatusBar. Mirrors the topbar pill plus a
-// short power/SWR readout. Clicking opens a popover with a fuller block.
+// Compact glance shown in NSStatusBar.
 struct MenuBarLabel: View {
     @ObservedObject var vm: MeterViewModel
 
@@ -28,28 +27,36 @@ struct MenuBarLabel: View {
 struct MenuBarContent: View {
     @ObservedObject var vm: MeterViewModel
     var onShowMain: () -> Void
+    var onConnect: () -> Void
     var onQuit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             row("PWR", value: vm.snapshot.map { String(format: "%.1f \(PowerModeSuffix.suffix(for: $0.mode))", $0.powerW) } ?? "—")
             row("SWR", value: vm.snapshot.map { String(format: "%.2f", $0.swr) } ?? "—")
-            row("Range", value: vm.snapshot?.range.rawValue ?? "—")
-            row("Mode", value: vm.snapshot?.mode.rawValue.replacingOccurrences(of: "_", with: " ") ?? "—")
+            row("Range", value: vm.snapshot?.range.rawValue.capitalized ?? "—")
+            row("Mode", value: vm.snapshot?.mode.rawValue.replacingOccurrences(of: "_", with: " ").capitalized ?? "—")
             row("Alarm", value: vm.snapshot?.alarmSetpoint.rawValue ?? "off")
             Divider()
-            Button("Show LP-100A Window") { onShowMain() }
-                .keyboardShortcut("o", modifiers: [.command])
+            Button("Show LP-100A Window") {
+                onShowMain()
+            }
+            .keyboardShortcut("o", modifiers: [.command])
+            Button("Connect to Server…") {
+                onConnect()
+                onShowMain()
+            }
+            Divider()
             Button("Quit") { onQuit() }
                 .keyboardShortcut("q", modifiers: [.command])
         }
         .padding(8)
-        .frame(width: 200)
+        .frame(width: 220)
     }
 
     private func row(_ label: String, value: String) -> some View {
         HStack {
-            Text(label).foregroundColor(.secondary)
+            Text(label).foregroundStyle(.secondary)
             Spacer()
             Text(value).font(.system(.body, design: .monospaced))
         }

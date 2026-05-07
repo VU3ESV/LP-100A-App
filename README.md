@@ -11,32 +11,50 @@ reference web UI as a real Mac app.
 
 ## What it does
 
+A native Mac window with a standard NSToolbar — connection badge on the
+left (green/yellow/red dot + host label), a segmented Normal / Vector Z
+picker in the middle, and Settings / Setup gear buttons on the right. The
+content area is two `regularMaterial` panels: the live readouts on top
+and the keypad row beneath.
+
 - **Live telemetry** from the LP-100A: power, SWR, |Z|, phase, dBm/dBW,
   range, peak/avg/tune mode, alarm setpoint, callsign — pushed over
   WebSocket from the server.
-- **Two views** that match the server's reference web client:
+- **Two views**:
   - **Normal** — PWR + SWR bargraphs (with sticky peak markers + range-aware
     ticks) and big numeric readouts.
   - **Vector Z** — |Z|, phase, R, X cells plus a polar compass needle.
-- **Three control verbs** (the only ones the LP-100A's serial protocol
-  accepts): Mode (cycles peak/avg/tune), Alarm step (cycles SWR setpoint),
-  Peak/Avg/Tune toggle.
+- **Three control verbs** the LP-100A's serial protocol accepts:
+  Mode (cycles peak/avg/tune), Alarm step (cycles SWR setpoint),
+  Peak/Avg/Tune toggle. Rendered as native bordered buttons under the
+  meter panel.
 - **SETUP overlay** — read-only reference cards for all 19 of the meter's
   SETUP screens (LP-100A Quick Start Guide v4.1), plus a mode-cycle
   re-alignment picker and a server log-level picker (`/api/log-level`).
 
-What's added on top of the web client (the reasons to be native):
+Mac-specific affordances:
 
-- **Menu-bar live readout** — glance-able PWR + SWR while the main window
-  is hidden.
-- **Native macOS notifications** — alert when the SWR alarm trips, throttled
-  to one per 30 s.
-- **Preferences (⌘,)** — server URL with "Test connection" button, alarm
-  notifications toggle, menu-bar item toggle.
+- **First-launch Connect sheet** — modal panel asking for the server URL,
+  with an inline "Test connection" probe (`/healthz`). Re-openable from the
+  toolbar shield button or via **⌘K**.
+- **Toolbar connection badge** — green dot + host label. Click the shield
+  in the toolbar to change servers.
+- **Menu-bar live readout** — glance-able PWR + SWR + connection state
+  while the main window is hidden.
+- **Native macOS notifications** — alert when the SWR alarm trips,
+  throttled to one per 30 s.
+- **Preferences (⌘,)** — server status + Change/Reconnect/Disconnect
+  buttons, notifications toggle, menu-bar toggle.
 - **Keyboard shortcuts** — ⌘1 / ⌘2 view switch, ⌘M / ⌘A / ⌘P controls,
-  ⌘. SETUP overlay toggle, ⌘R resync.
-- **Sleep/wake hook** — issues a resync on `NSWorkspace.didWakeNotification`
+  ⌘. SETUP overlay toggle, ⌘R resync, **⌘K Connect to Server…**,
+  **⇧⌘D Disconnect / Reconnect**.
+- **Sleep/wake hook** — reconnects on `NSWorkspace.didWakeNotification`
   so the meter is correct the moment the lid opens.
+
+The window respects the system appearance (light/dark) — readouts use
+the system tint color and `regularMaterial` panel backgrounds; only the
+bargraph fills retain functional teal/yellow/red color since signal
+severity has to read at a glance.
 
 ## Install
 
@@ -56,9 +74,15 @@ What's added on top of the web client (the reasons to be native):
 
 ### Configure
 
-On first launch the app expects the server at `http://localhost:8088`.
-Open **Preferences (⌘,)** and set the URL to your server's host:port. Hit
-**Test connection** to verify, then **Apply**.
+The app opens a **Connect to LP-100A Server** sheet automatically the
+first time it runs (no `serverURL` configured yet). Enter the URL of your
+server (e.g. `http://localhost:8088` for a local server, or
+`http://raspberrypi.local:8088` for a Pi on the LAN), tap **Test
+connection** to probe `/healthz`, then **Connect**.
+
+To change servers later: click the shield icon in the toolbar, choose
+**File → Connect to Server… (⌘K)**, or open **Preferences (⌘,) → Server
+→ Change Server…**. To disconnect cleanly, hit **⇧⌘D**.
 
 ## Build from source
 

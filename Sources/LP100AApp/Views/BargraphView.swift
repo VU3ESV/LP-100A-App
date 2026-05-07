@@ -1,7 +1,8 @@
 import SwiftUI
 
-// Horizontal segmented bargraph with sticky-peak marker. Mirrors the
-// .track / .fill / .peak DOM in the web client.
+// Horizontal segmented bargraph with sticky-peak marker. Track uses a
+// system-secondary background; fill colors are functional (teal / yellow /
+// red) so signal severity reads at a glance.
 struct BargraphView: View {
     enum FillStyle {
         case normal
@@ -18,40 +19,36 @@ struct BargraphView: View {
         VStack(alignment: .leading, spacing: 4) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    // Track: tick-grid background.
                     track
-                        .frame(height: 22)
+                        .frame(height: 18)
 
-                    // Fill.
                     Rectangle()
                         .fill(fillGradient)
-                        .frame(width: max(0, min(1, fillFraction)) * geo.size.width, height: 22)
-                        .shadow(color: glowColor, radius: 8)
+                        .frame(width: max(0, min(1, fillFraction)) * geo.size.width, height: 18)
+                        .shadow(color: glowColor, radius: 6)
                         .animation(.linear(duration: 0.09), value: fillFraction)
 
-                    // Peak marker.
                     Rectangle()
-                        .fill(Tokens.peak)
-                        .frame(width: 2, height: 26)
-                        .shadow(color: Tokens.peak, radius: 4)
+                        .fill(Color.white)
+                        .frame(width: 2, height: 22)
+                        .shadow(color: .white.opacity(0.7), radius: 3)
                         .offset(x: max(0, min(1, peakFraction)) * geo.size.width - 1, y: -2)
                         .animation(.easeOut(duration: 0.2), value: peakFraction)
-                        .opacity(0.9)
+                        .opacity(0.85)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .strokeBorder(Color.black, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
                 )
             }
-            .frame(height: 22)
+            .frame(height: 18)
 
             HStack {
                 ForEach(Array(ticks.enumerated()), id: \.offset) { idx, t in
                     Text(t)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(Tokens.tick)
-                        .tracking(0.5)
+                        .foregroundStyle(.tertiary)
                     if idx < ticks.count - 1 { Spacer() }
                 }
             }
@@ -59,21 +56,7 @@ struct BargraphView: View {
     }
 
     private var track: some View {
-        ZStack {
-            Tokens.grid
-            // Tick-stripe overlay (every 8px, 1px-wide black gap).
-            GeometryReader { geo in
-                Canvas { ctx, size in
-                    var x: CGFloat = 8
-                    while x < size.width {
-                        let stripe = Path(CGRect(x: x, y: 0, width: 1, height: size.height))
-                        ctx.fill(stripe, with: .color(Color.black.opacity(0.7)))
-                        x += 9
-                    }
-                }
-                .frame(width: geo.size.width, height: geo.size.height)
-            }
-        }
+        Rectangle().fill(Color.secondary.opacity(0.12))
     }
 
     private var fillGradient: LinearGradient {
@@ -93,8 +76,8 @@ struct BargraphView: View {
     private var glowColor: Color {
         switch fillStyle {
         case .normal: return Tokens.barGlow
-        case .warn:   return Tokens.yellow.opacity(0.45)
-        case .bad:    return Tokens.red.opacity(0.55)
+        case .warn:   return Color.yellow.opacity(0.45)
+        case .bad:    return Color.red.opacity(0.55)
         }
     }
 }

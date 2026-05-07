@@ -1,6 +1,36 @@
 # Architecture review — LP-100A-App
 
-**Date:** 2026-05-07 · **Status:** v0.1 (initial implementation review)
+**Date:** 2026-05-08 · **Status:** v0.2 (native shell + connection flow)
+
+## Changes since v0.1
+
+- **Native Mac chrome.** `LCDSurface` / `MeterCase` (custom dark gradient
+  panels with scan-lines) were removed. The window now uses an `NSToolbar`
+  via `.toolbar` modifier with a connection badge on the leading side, a
+  segmented Normal/Vector picker in the principal slot, and shield/wrench
+  gear buttons trailing. The body is two `regularMaterial`-backed `Panel`
+  surfaces — one for the active view, one for status + keypad. Background
+  uses `Color(NSColor.windowBackgroundColor)` so the window adopts the
+  system's light/dark appearance.
+- **First-launch Connect sheet.** When `UserDefaults["serverURL"]` is
+  empty, the app opens a modal `ConnectionSheet` (URL field + inline
+  `/healthz` probe + Connect / Cancel-or-Quit footer). Re-openable via
+  ⌘K or the toolbar's shield icon. A `ConnectionPlaceholder` view appears
+  in the main pane until the user has configured a URL.
+- **Explicit connection lifecycle.** `MeterViewModel` gained
+  `disconnect()`, `testConnection(urlString:)`, `connectionSheetOpen`,
+  `serverURLString`, `hasConfiguredServer`. The main window's status pill
+  was removed — connection state lives in the toolbar badge.
+- **Native button styles.** `KeypadView` rebuilt on `.bordered` /
+  `.controlSize(.large)` with SF Symbol leading icons. The custom
+  `KeyButtonStyle` gradient is gone. SETUP overlay's `mode-picker`
+  buttons became `.bordered` chips tinted by `.accentColor`.
+- **Bargraphs kept the teal/yellow/red fill colors** (functional signal
+  severity at a glance) but the track now uses `Color.secondary.opacity(0.12)`
+  so it works in both modes.
+- **Preferences sheet** rebuilt: Server tab shows a labeled-content
+  status row + Change/Reconnect/Disconnect buttons that punt URL editing
+  to the Connect sheet (single source of truth for setting the URL).
 
 This document is a focused review of the v0.1 implementation of the
 LP-100A-App macOS client. It covers structure, threading, network
@@ -260,13 +290,17 @@ CI (`.github/workflows/release.yml`):
 
 ## 10. Verdict
 
-The v0.1 implementation is **shippable** for VU3ESV's own use and for
-small-scale community testing. It hits proposal milestones M1 (wire +
-data), M2 (Normal + connection pill), M3 (Vector + cycle), M4 (SETUP
-overlay), and most of M5 (Mac integration: Cmd+, prefs, MenuBarExtra,
-notifications, keyboard shortcuts, sleep/wake hook). M6 (signed +
-notarized release) is gated on Apple Developer ID enrollment and is
-left as a v0.2 follow-up.
+The v0.2 implementation is **shippable** for VU3ESV's own use and for
+small-scale community testing. It hits proposal milestones M1–M5 (wire +
+data, Normal + connection state, Vector + cycle, SETUP overlay, Mac
+integration: Cmd+, prefs, MenuBarExtra, notifications, keyboard
+shortcuts, sleep/wake hook), and adds a first-launch Connect sheet plus
+a native NSToolbar that wasn't in the original proposal — those came
+from real-world feedback that the LCD-replica window without an obvious
+"Connect" affordance felt incomplete on macOS.
+
+M6 (signed + notarized release) is still gated on Apple Developer ID
+enrollment and remains the v0.3 follow-up.
 
 The architecture has no structural surprises and matches the proposal.
 The risks listed in §9 are quality-of-life rather than correctness

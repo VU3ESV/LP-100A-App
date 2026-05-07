@@ -1,13 +1,9 @@
 import SwiftUI
 
 struct PreferencesView: View {
-    @AppStorage("serverURL") var serverURL: String = "http://localhost:8088"
+    @ObservedObject var vm: MeterViewModel
     @AppStorage("alarmNotifications") var alarmNotifications: Bool = true
     @AppStorage("menuBarItemEnabled") var menuBarItemEnabled: Bool = true
-    @State private var testStatus: String = ""
-    @State private var testInFlight: Bool = false
-
-    var onChange: (URL) -> Void
 
     var body: some View {
         TabView {
@@ -23,34 +19,52 @@ struct PreferencesView: View {
 
     private var serverTab: some View {
         Form {
-            Section {
-                TextField("Server URL", text: $serverURL)
-                    .textFieldStyle(.roundedBorder)
-                Text("Default: http://localhost:8088 — point at your LP-100A server.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                HStack {
-                    Button("Apply") {
-                        if let u = URL(string: serverURL) {
-                            onChange(u)
-                            testStatus = "Reconnecting…"
+            LabeledContent("Server URL") {
+                Text(vm.serverURLString.isEmpty ? "Not configured" : vm.serverURLString)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(vm.serverURLString.isEmpty ? .secondary : .primary)
+                    .textSelection(.enabled)
+            }
+
+            LabeledContent("Status") {
+                statusBadge
+            }
+
+            HStack {
+                Button("Change Server…") {
+                    vm.connectionSheetOpen = true
+                }
+                .controlSize(.regular)
+
+                if vm.connection == .connected {
+                    Button("Disconnect") {
+                        Task { await vm.disconnect() }
+                    }
+                } else if vm.hasConfiguredServer {
+                    Button("Reconnect") {
+                        if let url = URL(string: vm.serverURLString) {
+                            Task { await vm.reconnect(serverURL: url) }
                         }
                     }
-                    Button {
-                        Task { await testConnection() }
-                    } label: {
-                        if testInFlight { ProgressView().controlSize(.small) }
-                        else { Text("Test connection") }
-                    }
-                    .disabled(testInFlight)
-                    Spacer()
-                    Text(testStatus)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
             }
         }
         .padding(20)
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        switch vm.connection {
+        case .connected:
+            Label("Connected", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .reconnecting:
+            Label("Reconnecting…", systemImage: "arrow.clockwise.circle.fill")
+                .foregroundStyle(.yellow)
+        case .disconnected:
+            Label("Offline", systemImage: "xmark.circle.fill")
+                .foregroundStyle(.red)
+        }
     }
 
     private var notificationsTab: some View {
@@ -58,7 +72,7 @@ struct PreferencesView: View {
             Toggle("Notify when SWR alarm trips", isOn: $alarmNotifications)
             Text("macOS notification posted on rising edge. Throttled to one per 30 s.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(20)
     }
@@ -68,28 +82,8 @@ struct PreferencesView: View {
             Toggle("Show menu-bar live readout", isOn: $menuBarItemEnabled)
             Text("Restart the app to apply menu-bar visibility changes.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(20)
-    }
-
-    private func testConnection() async {
-        guard let url = URL(string: serverURL) else {
-            testStatus = "Invalid URL"
-            return
-        }
-        testInFlight = true
-        defer { testInFlight = false }
-        let probe = url.appendingPathComponent("/healthz")
-        do {
-            let (_, resp) = try await URLSession.shared.data(from: probe)
-            if let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
-                testStatus = "OK"
-            } else {
-                testStatus = "Server returned non-2xx"
-            }
-        } catch {
-            testStatus = "Failed: \(error.localizedDescription)"
-        }
     }
 }
