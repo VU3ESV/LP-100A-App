@@ -28,6 +28,8 @@ actor WSClient {
     private var watchdogTask: Task<Void, Never>?
     private let continuation: AsyncStream<Event>.Continuation
     nonisolated let events: AsyncStream<Event>
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
 
     init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
@@ -60,7 +62,7 @@ actor WSClient {
 
     func send(_ frame: ClientFrame) async throws {
         guard let task else { throw URLError(.networkConnectionLost) }
-        let data = try JSONEncoder().encode(frame)
+        let data = try encoder.encode(frame)
         try await task.send(.data(data))
     }
 
@@ -82,7 +84,8 @@ actor WSClient {
         task = new
         new.resume()
         lastFrameAt = .now
-        emit(.stateChanged(.connected))
+        // Don't claim .connected until we receive the first frame (the
+        // server pushes a snapshot on accept). See handle(message:).
         backoffMs = 500
         startReceive(on: new)
         startWatchdog()
@@ -121,6 +124,10 @@ actor WSClient {
 
     private func handle(message: URLSessionWebSocketTask.Message) async {
         lastFrameAt = .now
+        // First inbound frame confirms the WebSocket handshake actually
+        // completed; until now we were optimistically calling ourselves
+        // "connected" right after task.resume().
+        if state != .connected { emit(.stateChanged(.connected)) }
         let data: Data?
         switch message {
         case .data(let d): data = d
@@ -129,7 +136,7 @@ actor WSClient {
         }
         guard let data else { return }
         do {
-            let frame = try JSONDecoder().decode(ServerFrame.self, from: data)
+            let frame = try decoder.decode(ServerFrame.self, from: data)
             emit(.frame(frame))
         } catch {
             emit(.parseError(error.localizedDescription))

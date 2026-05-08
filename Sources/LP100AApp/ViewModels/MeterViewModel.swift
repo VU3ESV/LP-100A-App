@@ -211,9 +211,12 @@ final class MeterViewModel: ObservableObject {
     }
 
     private func startDecayLoop() {
+        // Peak markers decay slowly (5 % per tick after a 1.5 s hold), so a
+        // 200 ms tick is plenty. Running at 16 fps was dragging the main
+        // actor every 60 ms for no visible benefit.
         decayTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000) // ~16 fps
+                try? await Task.sleep(nanoseconds: 200_000_000)
                 await MainActor.run {
                     guard let self else { return }
                     let now = Date()

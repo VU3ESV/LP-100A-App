@@ -22,18 +22,17 @@ struct BargraphView: View {
                     track
                         .frame(height: 18)
 
+                    // Realtime meter: avoid interpolation. A linear fill
+                    // animation with a 90 ms duration shows up as visible
+                    // lag between the snapshot and the rendered bar.
                     Rectangle()
                         .fill(fillGradient)
                         .frame(width: max(0, min(1, fillFraction)) * geo.size.width, height: 18)
-                        .shadow(color: glowColor, radius: 6)
-                        .animation(.linear(duration: 0.09), value: fillFraction)
 
                     Rectangle()
                         .fill(Color.white)
                         .frame(width: 2, height: 22)
-                        .shadow(color: .white.opacity(0.7), radius: 3)
                         .offset(x: max(0, min(1, peakFraction)) * geo.size.width - 1, y: -2)
-                        .animation(.easeOut(duration: 0.2), value: peakFraction)
                         .opacity(0.85)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -70,14 +69,6 @@ struct BargraphView: View {
         case .bad:
             return LinearGradient(colors: [Tokens.badTop, Tokens.badMid, Tokens.badBottom],
                                   startPoint: .top, endPoint: .bottom)
-        }
-    }
-
-    private var glowColor: Color {
-        switch fillStyle {
-        case .normal: return Tokens.barGlow
-        case .warn:   return Color.yellow.opacity(0.45)
-        case .bad:    return Color.red.opacity(0.55)
         }
     }
 }
