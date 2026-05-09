@@ -31,6 +31,17 @@ actor WSClient {
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
 
+    // Coalesce telemetry frames at the receive side so JSONDecoder runs
+    // at most ~5 Hz regardless of the meter's poll cadence (typically
+    // ~10 Hz for LP-100A). Heartbeat/status/ack frames are always
+    // decoded — they're rare or already infrequent.
+    private let telemetryMinInterval: TimeInterval = 0.2
+    private var lastTelemetryDecodedAt: Date = .distantPast
+    // `"power_w"` is unique to telemetry frames (the meter snapshot
+    // body). Heartbeat / status / ack don't carry it. Cheap substring
+    // scan — no JSON decode needed to discriminate.
+    private static let telemetryHint = "\"power_w\""
+
     init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
@@ -129,12 +140,35 @@ actor WSClient {
         // "connected" right after task.resume().
         if state != .connected { emit(.stateChanged(.connected)) }
         let data: Data?
+        let raw: String?
         switch message {
-        case .data(let d): data = d
-        case .string(let s): data = s.data(using: .utf8)
-        @unknown default: data = nil
+        case .data(let d):
+            data = d
+            raw = String(data: d, encoding: .utf8)
+        case .string(let s):
+            data = s.data(using: .utf8)
+            raw = s
+        @unknown default:
+            data = nil
+            raw = nil
         }
         guard let data else { return }
+
+        // Telemetry frames dominate the wire (~10 Hz) and are ~250 bytes
+        // each; status / ack / heartbeat are rare and tiny. Drop
+        // telemetry frames inside the throttle window without paying
+        // for JSON decode. One cheap substring scan, no parse — the
+        // server emits keys in alphabetical order so `"power_w"` lands
+        // inside the embedded `data` object near the front of the wire
+        // bytes.
+        if let raw, raw.contains(Self.telemetryHint) {
+            let now = Date()
+            if now.timeIntervalSince(lastTelemetryDecodedAt) < telemetryMinInterval {
+                return
+            }
+            lastTelemetryDecodedAt = now
+        }
+
         do {
             let frame = try decoder.decode(ServerFrame.self, from: data)
             emit(.frame(frame))

@@ -1,75 +1,146 @@
 import SwiftUI
 
-// Power & SWR readout panel modeled after LP-700-App's PowerSWRView. Two
-// reading cards on top (Power + SWR), then a compact info row with dBW /
-// dBm / Z / phase. The bargraph is a slim Capsule below the big numeric
-// — color-thresholded so signal severity reads at a glance.
-struct NormalView: View {
-    var snapshot: Telemetry?
-    var peakPwr: Double
-    var peakSwr: Double
+// MARK: - Value-typed model
+
+// Everything `NormalView` needs to render, fully resolved into Equatable
+// display values. Built once in `ContentView.body` from the snapshot and
+// passed in; SwiftUI's `.equatable()` then short-circuits the entire
+// `NormalView` subtree (including the bargraph layout pass + info
+// strip) when the model is unchanged frame-over-frame.
+//
+// The raw `Telemetry` is deliberately *not* part of this struct —
+// including it would invalidate the model on every wire-level field
+// change, even when none of the displayed strings or quantized values
+// moved. Instead, every input the view consumes is pre-computed
+// (rounded, formatted, quantized) at construction time.
+struct NormalModel: Equatable {
+    var powerValue: ReadingValue
+    var swrValue: ReadingValue
+    var swrTint: Color
+    var powerBar: BarConfig
+    var swrBar: BarConfig
+    var dbw: String
+    var dbm: String
+    var zOhm: String
+    var phase: String
+}
+
+struct ReadingValue: Equatable {
+    var value: String
+    var unit: String
+}
+
+struct BarConfig: Equatable {
+    var fraction: Double
+    var scale: Double
+    var baseTint: Color
+}
+
+extension NormalModel {
+    /// Builds a model from a snapshot. Pure function; safe to call on
+    /// every `ContentView.body` evaluation.
+    static func make(snapshot: Telemetry?) -> NormalModel {
+        let range = snapshot?.range ?? .high
+        let scale = RangeScale.max(for: range)
+        let mode = snapshot?.mode ?? .average
+
+        return NormalModel(
+            powerValue: formatPower(snapshot?.powerW, mode: mode),
+            swrValue: formatSWR(snapshot?.swr),
+            swrTint: swrTintColor(snapshot?.swr ?? 1.0),
+            powerBar: bar(for: snapshot?.powerW, scale: scale, baseTint: .cyan),
+            swrBar: bar(for: swrFraction(snapshot?.swr ?? 1.0), scale: SWRScale.max, baseTint: .green, isUnitFraction: true),
+            dbw: snapshot.map { String(format: "%.1f", $0.dbw) } ?? "—",
+            dbm: snapshot.map { String(format: "%.1f", $0.dbm) } ?? "—",
+            zOhm: snapshot.map { String(format: "%.1f Ω", $0.zOhm) } ?? "—",
+            phase: snapshot.map { String(format: "%.1f°", $0.phaseDeg) } ?? "—"
+        )
+    }
+}
+
+// MARK: - Pure helpers
+
+private func formatPower(_ w: Double?, mode: PeakMode) -> ReadingValue {
+    guard let w, !w.isNaN else { return .init(value: "—", unit: "W") }
+    let suffix = PowerModeSuffix.suffix(for: mode)
+    if w >= 1000 { return .init(value: String(format: "%.2f", w / 1000.0), unit: "k\(suffix)") }
+    if w >= 100  { return .init(value: String(format: "%.0f", w), unit: suffix) }
+    return .init(value: String(format: "%.1f", w), unit: suffix)
+}
+
+private func formatSWR(_ s: Double?) -> ReadingValue {
+    guard let s, !s.isNaN else { return .init(value: "—", unit: "") }
+    return .init(value: String(format: "%.2f", s), unit: "")
+}
+
+private func swrTintColor(_ swr: Double) -> Color {
+    if swr >= SWRScale.badThreshold { return .red }
+    if swr >= SWRScale.warnThreshold { return .yellow }
+    return .accentColor
+}
+
+private func swrFraction(_ swr: Double) -> Double {
+    (swr - 1.0) / (SWRScale.max - 1.0)
+}
+
+// Quantize the bar fraction to 1 % steps. The eye can't resolve finer
+// movement on a 6-pt bar, and step-quantising is what lets the
+// surrounding `Equatable` model skip body re-eval when adjacent
+// samples land in the same step.
+private func bar(for value: Double?, scale: Double, baseTint: Color, isUnitFraction: Bool = false) -> BarConfig {
+    let v = value ?? 0
+    let raw = isUnitFraction ? v : (scale > 0 ? v / scale : 0)
+    let quantized = (raw * 100).rounded() / 100
+    return BarConfig(fraction: quantized, scale: scale, baseTint: baseTint)
+}
+
+// MARK: - View
+
+// Power & SWR readout panel modeled after LP-700-App's PowerSWRView.
+// Two reading cards on top (Power + SWR), then an inline info strip
+// with dBW · dBm · |Z| · Phase.
+//
+// View is `Equatable` over its `model`; SwiftUI's `.equatable()` lets
+// the entire subtree skip body + layout when display values are
+// unchanged frame-over-frame — extremely common after `formatPower`
+// rounds and the bar fraction quantizes into the same 1 % step.
+struct NormalView: View, Equatable {
+    let model: NormalModel
+
+    static func == (lhs: NormalView, rhs: NormalView) -> Bool {
+        lhs.model == rhs.model
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 ReadingCard(label: "Power",
-                            value: formatPower(snapshot?.powerW),
+                            value: model.powerValue,
                             tint: .accentColor,
-                            bar: powerBar)
+                            bar: model.powerBar)
+                    .equatable()
                 ReadingCard(label: "SWR",
-                            value: (String(format: "%.2f", snapshot?.swr ?? 1.0), ""),
-                            tint: swrTint(snapshot?.swr ?? 1.0),
-                            bar: swrBar)
+                            value: model.swrValue,
+                            tint: model.swrTint,
+                            bar: model.swrBar)
+                    .equatable()
             }
 
             // Plain HStack inside the parent Panel — no separate
             // CompactPanel wrapper, so we don't end up with a rounded
-            // card nested inside another rounded card. Mirrors the way
-            // LP-700-App keeps Avg / Peak / SWR / Controls all inside a
-            // single Panel with no inner chrome.
+            // card nested inside another rounded card.
             Divider()
             HStack(spacing: 8) {
-                statusItem(label: "dBW", value: snapshot.map { String(format: "%.1f", $0.dbw) } ?? "—")
+                statusItem(label: "dBW", value: model.dbw)
                 Spacer(minLength: 4)
-                statusItem(label: "dBm", value: snapshot.map { String(format: "%.1f", $0.dbm) } ?? "—")
+                statusItem(label: "dBm", value: model.dbm)
                 Spacer(minLength: 4)
-                statusItem(label: "|Z|", value: snapshot.map { String(format: "%.1f Ω", $0.zOhm) } ?? "—")
+                statusItem(label: "|Z|", value: model.zOhm)
                 Spacer(minLength: 4)
-                statusItem(label: "Phase", value: snapshot.map { String(format: "%.1f°", $0.phaseDeg) } ?? "—")
-                Spacer(minLength: 4)
-                statusItem(label: "Peak (W)",
-                           value: peakPwr > 0 ? String(format: "%.1f", peakPwr) : "—")
+                statusItem(label: "Phase", value: model.phase)
             }
             .frame(maxWidth: .infinity)
         }
-    }
-
-    // MARK: - Bar configs
-
-    private var powerBar: ReadingCard.BarConfig {
-        let scale = RangeScale.max(for: snapshot?.range ?? .high)
-        let frac = (snapshot?.powerW ?? 0) / scale
-        return ReadingCard.BarConfig(fraction: frac, scale: scale, baseTint: .cyan)
-    }
-
-    private var swrBar: ReadingCard.BarConfig {
-        let swr = snapshot?.swr ?? 1.0
-        let frac = (swr - 1.0) / (SWRScale.max - 1.0)
-        return ReadingCard.BarConfig(fraction: frac, scale: SWRScale.max, baseTint: .green)
-    }
-
-    private func formatPower(_ w: Double?) -> (value: String, unit: String) {
-        guard let w, !w.isNaN else { return ("—", "W") }
-        let suffix = PowerModeSuffix.suffix(for: snapshot?.mode ?? .average)
-        if w >= 1000 { return (String(format: "%.2f", w / 1000.0), "k\(suffix)") }
-        if w >= 100  { return (String(format: "%.0f", w), suffix) }
-        return (String(format: "%.1f", w), suffix)
-    }
-
-    private func swrTint(_ swr: Double) -> Color {
-        if swr >= SWRScale.badThreshold { return .red }
-        if swr >= SWRScale.warnThreshold { return .yellow }
-        return .accentColor
     }
 
     private func statusItem(label: String, value: String) -> some View {
@@ -86,18 +157,19 @@ struct NormalView: View {
     }
 }
 
-// MARK: - ReadingCard (the LP-700 visual signature)
+// MARK: - Pieces
 
-struct ReadingCard: View {
+struct ReadingCard: View, Equatable {
     var label: String
-    var value: (value: String, unit: String)
+    var value: ReadingValue
     var tint: Color
     var bar: BarConfig? = nil
 
-    struct BarConfig {
-        var fraction: Double
-        var scale: Double
-        var baseTint: Color
+    static func == (lhs: ReadingCard, rhs: ReadingCard) -> Bool {
+        lhs.label == rhs.label
+            && lhs.value == rhs.value
+            && lhs.tint == rhs.tint
+            && lhs.bar == rhs.bar
     }
 
     var body: some View {
@@ -141,7 +213,7 @@ struct ReadingCard: View {
     }
 }
 
-private struct PowerBar: View {
+private struct PowerBar: View, Equatable {
     var fraction: Double
     var baseTint: Color
 
@@ -160,5 +232,9 @@ private struct PowerBar: View {
             }
         }
         .frame(height: 6)
+        // No `.animation(value: fraction)` — implicit animations run a
+        // 60 Hz CoreAnimation transaction until they settle, and at the
+        // 5 Hz mutation rate we never settle. The fraction is already
+        // quantized at construction time, so changes step-jump cleanly.
     }
 }

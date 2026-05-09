@@ -1,6 +1,76 @@
 # Architecture review — LP-100A-App
 
-**Date:** 2026-05-09 · **Status:** v0.2.4 (chrome aligned with LP-700-App)
+**Date:** 2026-05-09 · **Status:** v0.2.6 (perf pass — telemetry coalescing + Equatable subtree)
+
+## Telemetry coalescing and render budgets
+
+The wire pushes telemetry at the meter's poll cadence (~10 Hz on the
+LP-100A's 100 ms poll). A human can't read more than ~5 numbers/second,
+so we cap UI-driving work at three layers:
+
+1. **WSClient drops telemetry frames inside the throttle window.** Each
+   `URLSessionWebSocketTask.Message` is examined as a string first; if
+   its body contains the `"power_w"` marker (unique to telemetry frames;
+   heartbeat / status / ack don't carry it) AND
+   `Date().timeIntervalSince(lastTelemetryDecodedAt) < 0.2`, the actor
+   returns without invoking `JSONDecoder`. Result: at sustained TX, ~5×
+   fewer JSON decodes — the substring scan is cheap, the JSON parse is
+   not.
+
+2. **MeterViewModel coalesces `@Published var snapshot` to ≤5 Hz.**
+   Inbound telemetry events update a private `pendingSnapshot`; a
+   single trailing `publishTask` commits the latest pending value to
+   `snapshot` after the 200 ms window. `handleAlarmEdge` runs on every
+   inbound frame so notifications stay timely; only the SwiftUI
+   mutation path is throttled. `stop()` cancels the publish task and
+   clears `pendingSnapshot` on disconnect.
+
+   Inverse knob: drop `MeterViewModel.publishInterval` to `0.1` (10 Hz)
+   if smoother bargraph motion is wanted. The 5 Hz default trades
+   fluency for halved layout work.
+
+3. **Value-typed view subtree + layered Equatable.** `ContentView`
+   builds a `NormalModel` (Equatable struct: pre-formatted strings,
+   pre-quantized bar fractions) on each body evaluation, and passes
+   it into `NormalView`. The raw `Telemetry` is deliberately *not*
+   in the model — including it would invalidate Equatable on every
+   wire-level field jitter. `NormalView` is `Equatable` over the
+   model; inside it, the leaf `ReadingCard`s are also `Equatable` and
+   `.equatable()`-wrapped so an unchanged Power card skips body +
+   layout even when the SWR card moved.
+
+   Toolbar items (`ConnectionBadge`) are likewise `Equatable` and
+   `.equatable()`-wrapped at the call site. SwiftUI's bridge to
+   AppKit was relayouting toolbar items on every ContentView body
+   re-eval despite their inputs being unchanged.
+
+   The bar fraction is quantized to 1 % steps in
+   `NormalModel.make` — finer movement isn't visible on a 6 pt
+   Capsule bar, and step-quantising is what lets the surrounding
+   `Equatable` short-circuit when adjacent samples land in the same
+   step.
+
+   The `.animation(value: fraction)` modifier on `PowerBar` is
+   intentionally absent. Implicit animations run a 60 Hz CoreAnimation
+   transaction until they settle, and at the 5 Hz mutation rate they
+   never settle — keeping `NSPerformVisuallyAtomicChange` constantly
+   busy. Removing it (combined with the quantized fraction) lets
+   `Equatable` actually short-circuit re-renders.
+
+**Empirical:** measured by `top -l N -s 1 -pid` against a real
+`192.168.86.43:8088` server with the meter idling at noise floor
+(~10 frames/sec on the wire, no TX):
+
+| Version | Idle CPU |
+|---|---|
+| v0.2.5 | ~9.9 % |
+| v0.2.6 | ~0.0 % |
+
+The drop is dominated by (a) skipping the JSON decode for ~half the
+inbound frames and (b) `Equatable.equatable()` letting the entire
+`NormalView` subtree skip body re-evaluation when `formatPower`
+rounds two adjacent snapshots to the same display string and the bar
+fraction quantizes to the same step.
 
 ## Changes since v0.2 baseline
 
@@ -26,6 +96,23 @@ clients read as the same product family on the same desk:
   rounded panels stacked (main Panel + bottom CompactPanel) instead of
   three. Restored the `Divider()` after PanelHeader and bumped inner
   spacing 8 → 10 pt to match LP-700 verbatim.
+- **v0.2.5** — screenshot launch flags + docs refresh.
+- **v0.2.6** — profile-driven CPU pass. Idle CPU during connected
+  telemetry dropped from ~9.9 % to ~0 % via three changes mirroring
+  VU3ESV/LP-700-App's c52fe11 + bec7c74 commits:
+    1. WSClient discriminates telemetry vs heartbeat/status/ack with a
+       cheap `String.contains("\"power_w\"")` and skips JSON decode
+       inside the 200 ms window.
+    2. MeterViewModel coalesces `@Published var snapshot` to 5 Hz
+       (`pendingSnapshot` + trailing `publishTask`); alarm-edge
+       detection still runs on every inbound frame.
+    3. NormalView factored onto a value-typed `NormalModel` (Equatable
+       over pre-formatted strings + 1 %-quantized bar fractions);
+       `ReadingCard`, `PowerBar`, `NormalView`, `ConnectionBadge` all
+       Equatable + `.equatable()` at their call sites; the dead
+       client-side `peakPwr/peakSwr` decay loop deleted along with the
+       "Peak (W)" info-strip cell. See [§ Telemetry coalescing](#telemetry-coalescing-and-render-budgets)
+       for the full picture.
 
 ## Changes since v0.1
 

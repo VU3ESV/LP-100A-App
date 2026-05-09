@@ -26,8 +26,14 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var mainToolbar: some ToolbarContent {
+        // ConnectionBadge is Equatable over its inputs; `.equatable()`
+        // lets SwiftUI's diff skip the toolbar item's body (and the
+        // AppKit NSToolbarItemViewer relayout that follows) when the
+        // state and host haven't changed. Profile showed the toolbar
+        // item's `_layoutSubtreeWithOldSize:` was a hot spot at 10 Hz.
         ToolbarItem(placement: .navigation) {
             ConnectionBadge(state: vm.connection, host: hostHint)
+                .equatable()
                 .help(hostHint)
         }
 
@@ -139,7 +145,17 @@ struct ContentView: View {
         } else if vm.currentView == "vector" {
             VectorView(snapshot: vm.snapshot)
         } else {
-            NormalView(snapshot: vm.snapshot, peakPwr: vm.peakPwr, peakSwr: vm.peakSwr)
+            // Build a value-typed model on each ContentView re-render
+            // (cheap; pure functions over the snapshot). NormalView is
+            // `Equatable` over the model, so SwiftUI's `.equatable()`
+            // skips the entire bargraph + info-strip subtree's body
+            // re-evaluation and layout pass when display values are
+            // unchanged frame-over-frame — extremely common at the 5 Hz
+            // publish rate after `formatPower` rounds adjacent samples
+            // to the same string and the bar fraction quantizes to the
+            // same 1 % step.
+            NormalView(model: NormalModel.make(snapshot: vm.snapshot))
+                .equatable()
         }
     }
 
@@ -169,7 +185,7 @@ struct ContentView: View {
 
 // MARK: - Toolbar pieces
 
-private struct ConnectionBadge: View {
+private struct ConnectionBadge: View, Equatable {
     var state: WSClient.ConnectionState
     var host: String
 
