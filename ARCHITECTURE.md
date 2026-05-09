@@ -1,6 +1,31 @@
 # Architecture review — LP-100A-App
 
-**Date:** 2026-05-08 · **Status:** v0.2 (native shell + connection flow)
+**Date:** 2026-05-09 · **Status:** v0.2.4 (chrome aligned with LP-700-App)
+
+## Changes since v0.2 baseline
+
+The v0.2.x series successively tightens the visual chrome to match
+[VU3ESV/LP-700-App](https://github.com/VU3ESV/LP-700-App) so the two
+clients read as the same product family on the same desk:
+
+- **v0.2.1** — perceived-latency fix. Dropped the bargraph's 90 ms
+  `.linear` fill animation and the 200 ms peak-marker easeOut (visible
+  lag against the snapshot). Reused JSONDecoder/JSONEncoder. Defer
+  `.connected` until first inbound frame. Decay loop 16 fps → 5 fps.
+- **v0.2.2** — adopt LP-700-App's compact native shell. Window 820×440
+  default (was min 720×540). Panel padding 10 pt (was 20 pt). Bargraphs
+  rebuilt as `ReadingCard` — 40 pt rounded numeric + 6 pt Capsule bar +
+  scale tick. Keypad shrunk to `.bordered .controlSize(.small)`.
+  Status row collapsed into a `CompactPanel`.
+- **v0.2.3** — toolbar pill chrome. Replaced the wide segmented Picker
+  in `.principal` with two capsule chips (`cornerRadius 999`,
+  accent-tinted border + 12 % accent fill when active). Mirrors
+  LP-700's `BackendBadge` styling exactly.
+- **v0.2.4** — panel-stack rhythm. Removed the inner `CompactPanel`
+  around the dBW/dBm/|Z|/Phase/Peak row so the meter face shows two
+  rounded panels stacked (main Panel + bottom CompactPanel) instead of
+  three. Restored the `Divider()` after PanelHeader and bumped inner
+  spacing 8 → 10 pt to match LP-700 verbatim.
 
 ## Changes since v0.1
 

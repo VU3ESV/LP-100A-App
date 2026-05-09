@@ -12,18 +12,21 @@ reference web UI as a real Mac app.
 ## What it does
 
 A native Mac window with a standard NSToolbar — connection badge on the
-left (green/yellow/red dot + host label), a segmented Normal / Vector Z
-picker in the middle, and Settings / Setup gear buttons on the right. The
-content area is two `regularMaterial` panels: the live readouts on top
-and the keypad row beneath.
+left (green/yellow/red dot + host label), two capsule view chips in the
+middle (Normal / Vector Z), and Settings / Setup buttons on the right.
+The content area is two `regularMaterial` panels: the live readouts on
+top and a compact status row + keypad beneath. Visual chrome is aligned
+with [VU3ESV/LP-700-App](https://github.com/VU3ESV/LP-700-App) so the
+two clients feel like siblings.
 
 - **Live telemetry** from the LP-100A: power, SWR, |Z|, phase, dBm/dBW,
   range, peak/avg/tune mode, alarm setpoint, callsign — pushed over
   WebSocket from the server.
 - **Two views**:
-  - **Normal** — PWR + SWR bargraphs (with sticky peak markers + range-aware
-    ticks) and big numeric readouts.
-  - **Vector Z** — |Z|, phase, R, X cells plus a polar compass needle.
+  - **Normal** — Power + SWR reading cards with slim capsule bargraphs
+    (range-aware, color-thresholded), plus a compact dBW · dBm · |Z| ·
+    Phase · Peak info strip below.
+  - **Vector Z** — |Z|, phase, R, X cards plus a polar compass needle.
 - **Three control verbs** the LP-100A's serial protocol accepts:
   Mode (cycles peak/avg/tune), Alarm step (cycles SWR setpoint),
   Peak/Avg/Tune toggle. Rendered as native bordered buttons under the
@@ -53,8 +56,8 @@ Mac-specific affordances:
 
 The window respects the system appearance (light/dark) — readouts use
 the system tint color and `regularMaterial` panel backgrounds; only the
-bargraph fills retain functional teal/yellow/red color since signal
-severity has to read at a glance.
+capsule bargraph fills retain functional cyan/yellow/red color since
+signal severity has to read at a glance.
 
 ## Install
 
@@ -140,14 +143,14 @@ LP-100A-App/
 ├── Package.swift            # Swift Package manifest (executable + tests)
 ├── Sources/LP100AApp/
 │   ├── App.swift            # @main, scenes (WindowGroup, Settings, MenuBarExtra)
-│   ├── Theme/               # Tokens, LCDStyle (mirrors :root in the web client)
+│   ├── Theme/               # Tokens (functional bar gradients), Panel/CompactPanel/PanelHeader primitives
 │   ├── Net/                 # WireProtocol, WSClient, ConfigClient
 │   ├── ViewModels/          # MeterViewModel
-│   ├── Views/               # ContentView, Normal, Vector, Setup, Keypad, Pill, etc.
+│   ├── Views/               # ContentView, NormalView (ReadingCards), VectorView, SetupOverlay, KeypadView, ConnectionSheet, …
 │   └── MenuBar/             # MenuBarLabel + MenuBarContent popover
 ├── Tests/LP100AAppTests/    # WireProtocol + scaling round-trips
 ├── Resources/Info.plist     # bundle template (VERSION substituted at build time)
-├── scripts/                 # build-app.sh, make-dmg.sh, make-icon.sh
+├── scripts/                 # build-app.sh, make-dmg.sh, make-icon.sh, grab-screenshot.sh
 └── .github/workflows/       # release.yml — builds DMG, attaches to release
 ```
 

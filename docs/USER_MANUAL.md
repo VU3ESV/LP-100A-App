@@ -64,70 +64,84 @@ panel, and a status + keypad row:
 | Element | What it shows | Click |
 |---|---|---|
 | **Connection badge** | Green dot + "Connected" + host:port (or yellow "Reconnecting", or red "Offline") | (read-only — change server via the shield button or ⌘K) |
-| **View picker** | Segmented control: **Normal** / **Vector Z** | Tap to switch view |
+| **View pills** | Two capsule chips: **Normal** / **Vector Z**. Active chip is accent-tinted; inactive chip is outlined | Tap a chip to switch view, or use ⌘1 / ⌘2 |
 | **Shield icon** (right) | Server connection settings | Re-opens the **Connect to LP-100A Server** sheet so you can change URLs |
 | **Wrench icon** (right) | SETUP reference | Toggles the SETUP overlay |
 
 ### 3.2 Status row
 
-Below the instrument panel:
+The compact info row at the bottom of the window (inside its own panel)
+shows:
 
-- **Power range** — Low (0–25 W), Mid (0–125 W), High (0–750 W). Set on
-  the meter's Range button — this app doesn't change it.
-- **Peak mode** — Average / Peak Hold / Tune. Cycle with the **Peak /
-  Avg / Tune** keypad button.
+- **Range** — Low (0–25 W), Mid (0–125 W), High (0–750 W). Set on the
+  meter's Range button — this app doesn't change it.
+- **Mode** — Average / Peak Hold / Tune. Cycle with the **Peak**
+  keypad button.
 - **Alarm** — current SWR alarm setpoint (off / 1.5 / 2.0 / 2.5 / 3.0 /
-  user). Cycle with the **Alarm** keypad button. Shows in red and
-  blinks if the alarm is currently tripped.
-- **Not connected** indicator on the right when the WebSocket is down.
+  user). Cycle with the **Alarm** keypad button. Shows in red if the
+  alarm is currently tripped.
+- **Link** — Live (green) when the WebSocket is healthy, Reconnecting
+  (yellow), or Offline (red).
 
 ### 3.3 Keypad
 
-The three control verbs the LP-100A's serial protocol accepts:
+The keypad sits beside the status row in the same compact panel:
 
 | Button | Sends | Keyboard |
 |---|---|---|
 | **Mode** | `mode_step` (advances the meter's Peak/Avg/Tune cycle and the app's view in lockstep) | ⌘M |
 | **Alarm** | `alarm_step` (advances the SWR alarm setpoint cycle) | ⌘A |
-| **Peak / Avg / Tune** | `peak_toggle` (the same as the meter's `F` button) | ⌘P |
+| **Peak** | `peak_toggle` (the same as the meter's `F` button) | ⌘P |
+| **Resync** | re-requests the current snapshot from the server | ⌘Y |
 
-If the server was started with `allow_control = false`, the keypad shows
-"Read-only" and all three buttons are disabled.
+If the server was started with `allow_control = false`, all four
+buttons disable and the row shows a "Read-only" lock icon.
 
 ---
 
 ## 4. Normal view
 
-The default view. Two horizontal bargraphs on the left and big numeric
-readouts on the right.
+The default view: two side-by-side reading cards (Power + SWR) inside the
+main panel, with a single info strip below for `dBW · dBm · |Z| · Phase ·
+Peak (W)`.
 
 ![Normal view](screenshots/01-main-window-normal.png)
 
-- **Power bargraph.** Range-aware — the scale label shows the current
-  range and tick marks adjust per range. Fill is teal; a sticky white
-  marker tracks the recent peak (decays after 1.5 s).
-- **SWR bargraph.** Always 1.0 → 5.0 scale. Fill changes color as
-  signal severity rises:
-  - Teal: SWR < 1.5
-  - Yellow: 1.5 ≤ SWR < 2.0
-  - Red: SWR ≥ 2.0
-- **Power readout.** The big number top-right with a unit suffix that
-  matches the LP-100A LCD convention:
+- **Power card.** Big rounded numeric in accent color, with a unit
+  suffix that matches the LP-100A LCD convention:
   - `w` lowercase — Average mode
   - `W` uppercase — Peak Hold
   - `T` — Tune
-- **dBW / dBm** values shown below the power readout.
-- **SWR readout.** Bottom-right block with `Z = … Ω · ∠ = …°` underneath.
+
+  Below the numeric is a slim capsule bargraph keyed to the current
+  range (Low / Mid / High). The bar tints as fill rises:
+  - Cyan: < 80 % of full scale
+  - Yellow: 80 % ≤ fill < 95 %
+  - Red: ≥ 95 %
+
+  A "0 / 25 W" tick on the right marks full scale.
+
+- **SWR card.** Big numeric whose color follows severity:
+  - Accent (cyan/blue): SWR < 1.5
+  - Yellow: 1.5 ≤ SWR < 2.0
+  - Red: SWR ≥ 2.0
+
+  Same slim capsule bargraph treatment, scaled 1.0 → 5.0.
+
+- **Info strip** below the cards: dBW · dBm · |Z| · Phase · Peak (W)
+  in a compact 9 pt label / 11 pt value layout. Peak is the highest
+  power seen recently (decays after a 1.5 s hold).
 
 ---
 
 ## 5. Vector Z view
 
-Press **⌘2** or click **Vector Z** in the toolbar's view picker.
+Press **⌘2** or tap the **Vector Z** chip in the toolbar.
 
 ![Vector view](screenshots/03-vector-view.png)
 
-The same telemetry rendered as impedance:
+The same telemetry rendered as impedance, laid out as five small cards
+on the left and a polar compass on the right:
 
 - **|Z|** — magnitude of the impedance, in ohms.
 - **Phase** — angle of the impedance vector, in degrees.

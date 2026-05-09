@@ -14,6 +14,7 @@ struct LP100AApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(vm: vm)
+                .background(OpenPrefsCapture())
                 .task { await bootstrap() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     if vm.connection == .connected { vm.resync() }
@@ -54,6 +55,20 @@ struct LP100AApp: App {
         } else {
             // First launch — open the Connect sheet automatically.
             vm.connectionSheetOpen = true
+        }
+        // Screenshot/debug launch flags. `open -a LP-100A-App --args
+        // --open-setup` flips the SETUP overlay on right after bootstrap
+        // so the docs script can capture it without UI scripting /
+        // accessibility permission. `--view=vector` switches to that
+        // view. `--open-prefs` is wired through OpenPrefsCapture below.
+        if CommandLine.arguments.contains("--open-setup") {
+            vm.setupOpen = true
+        }
+        if let viewArg = CommandLine.arguments.first(where: { $0.hasPrefix("--view=") }) {
+            let viewName = String(viewArg.dropFirst("--view=".count))
+            if let idx = vm.views.firstIndex(of: viewName) {
+                vm.setView(idx)
+            }
         }
     }
 
@@ -111,6 +126,27 @@ struct LP100AApp: App {
         } else {
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+}
+
+// Invisible helper that pops the Settings window when `--open-prefs` is on
+// argv, so the screenshot driver can capture Preferences without needing
+// Accessibility permission for `osascript` keystroke. Tries the macOS 14+
+// selector first, falls back to the macOS 13 one. On macOS 26+ where Apple
+// removed both selectors, capture Preferences manually with ⌘,.
+private struct OpenPrefsCapture: View {
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                guard CommandLine.arguments.contains("--open-prefs") else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    NSApp.activate(ignoringOtherApps: true)
+                    if !NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+                        _ = NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+                    }
+                }
+            }
     }
 }
 
