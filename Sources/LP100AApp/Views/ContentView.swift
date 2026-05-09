@@ -205,25 +205,50 @@ private struct ConnectionBadge: View {
     }
 }
 
+// Capsule pill row matching LP-700-App's BackendBadge styling. Two
+// chips fully rounded (cornerRadius 999), tinted accent when active,
+// muted otherwise. Tappable for direct view switching.
 private struct ViewPicker: View {
     @ObservedObject var vm: MeterViewModel
 
     var body: some View {
-        Picker("", selection: Binding(
-            get: { vm.currentView },
-            set: { newValue in
-                if let idx = vm.views.firstIndex(of: newValue) {
-                    vm.setView(idx)
-                }
-            }
-        )) {
-            ForEach(vm.views, id: \.self) { v in
-                Text(label(for: v)).tag(v)
+        HStack(spacing: 4) {
+            ForEach(Array(vm.views.enumerated()), id: \.offset) { idx, v in
+                chip(label: label(for: v),
+                     active: idx == vm.viewIdx && !vm.setupOpen,
+                     icon: icon(for: v),
+                     action: { vm.setView(idx) })
             }
         }
-        .pickerStyle(.segmented)
-        .frame(minWidth: 200)
+        .opacity(vm.setupOpen ? 0.4 : 1.0)
         .disabled(vm.setupOpen)
+    }
+
+    private func chip(label: String, active: Bool, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.06 * 11)
+                    .textCase(.uppercase)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .foregroundColor(active ? .accentColor : .secondary)
+            .background(
+                RoundedRectangle(cornerRadius: 999)
+                    .fill(active ? Color.accentColor.opacity(0.12) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 999)
+                    .strokeBorder(active ? Color.accentColor.opacity(0.5)
+                                          : Color.secondary.opacity(0.3),
+                                  lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func label(for v: String) -> String {
@@ -231,6 +256,13 @@ private struct ViewPicker: View {
         case "normal": return "Normal"
         case "vector": return "Vector Z"
         default: return v.capitalized
+        }
+    }
+
+    private func icon(for v: String) -> String {
+        switch v {
+        case "vector": return "scope"
+        default: return "waveform"
         }
     }
 }
