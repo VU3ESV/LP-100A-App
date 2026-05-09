@@ -71,11 +71,12 @@ struct ContentView: View {
             }
 
             Panel {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     PanelHeader(
                         title: vm.setupOpen ? "Setup reference" : sectionTitle,
                         trailing: callsignAccessory
                     )
+                    Divider()
                     activeView
                 }
             }

@@ -22,21 +22,25 @@ struct NormalView: View {
                             bar: swrBar)
             }
 
-            CompactPanel {
-                HStack(spacing: 8) {
-                    statusItem(label: "dBW", value: snapshot.map { String(format: "%.1f", $0.dbw) } ?? "—")
-                    Spacer(minLength: 4)
-                    statusItem(label: "dBm", value: snapshot.map { String(format: "%.1f", $0.dbm) } ?? "—")
-                    Spacer(minLength: 4)
-                    statusItem(label: "|Z|", value: snapshot.map { String(format: "%.1f Ω", $0.zOhm) } ?? "—")
-                    Spacer(minLength: 4)
-                    statusItem(label: "Phase", value: snapshot.map { String(format: "%.1f°", $0.phaseDeg) } ?? "—")
-                    Spacer(minLength: 4)
-                    statusItem(label: "Peak (W)",
-                               value: peakPwr > 0 ? String(format: "%.1f", peakPwr) : "—")
-                }
-                .frame(maxWidth: .infinity)
+            // Plain HStack inside the parent Panel — no separate
+            // CompactPanel wrapper, so we don't end up with a rounded
+            // card nested inside another rounded card. Mirrors the way
+            // LP-700-App keeps Avg / Peak / SWR / Controls all inside a
+            // single Panel with no inner chrome.
+            Divider()
+            HStack(spacing: 8) {
+                statusItem(label: "dBW", value: snapshot.map { String(format: "%.1f", $0.dbw) } ?? "—")
+                Spacer(minLength: 4)
+                statusItem(label: "dBm", value: snapshot.map { String(format: "%.1f", $0.dbm) } ?? "—")
+                Spacer(minLength: 4)
+                statusItem(label: "|Z|", value: snapshot.map { String(format: "%.1f Ω", $0.zOhm) } ?? "—")
+                Spacer(minLength: 4)
+                statusItem(label: "Phase", value: snapshot.map { String(format: "%.1f°", $0.phaseDeg) } ?? "—")
+                Spacer(minLength: 4)
+                statusItem(label: "Peak (W)",
+                           value: peakPwr > 0 ? String(format: "%.1f", peakPwr) : "—")
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
