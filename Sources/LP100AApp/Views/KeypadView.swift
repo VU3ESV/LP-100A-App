@@ -1,8 +1,8 @@
 import SwiftUI
 
-// The three control verbs the LP-100A's serial protocol accepts. Wrapped
-// in native bordered buttons so they sit comfortably in the Mac toolbar
-// idiom; functional, not decorative.
+// Three control verbs the LP-100A serial protocol accepts. Compact
+// bordered buttons matching LP-700-App's KeypadView footprint so the
+// status row + keypad fit on a single CompactPanel without scrolling.
 struct KeypadView: View {
     @ObservedObject var vm: MeterViewModel
 
@@ -18,17 +18,21 @@ struct KeypadView: View {
 
             keyButton(title: "Alarm",
                       systemImage: "bell.badge",
-                      subtitle: "SWR setpoint",
+                      subtitle: vm.snapshot?.alarmSetpoint.rawValue ?? "—",
                       action: { vm.sendAlarm() })
                 .keyboardShortcut("a", modifiers: [.command])
 
-            keyButton(title: "Peak / Avg / Tune",
+            keyButton(title: "Peak",
                       systemImage: "waveform.path",
                       subtitle: peakSubtitle,
                       action: { vm.sendPeak() })
                 .keyboardShortcut("p", modifiers: [.command])
 
-            Spacer()
+            keyButton(title: "Resync",
+                      systemImage: "arrow.clockwise",
+                      subtitle: "From server",
+                      action: { vm.resync() })
+                .keyboardShortcut("y", modifiers: [.command])
 
             if !vm.allowControl {
                 Label("Read-only", systemImage: "lock.fill")
@@ -57,22 +61,23 @@ struct KeypadView: View {
 
     private func keyButton(title: String, systemImage: String, subtitle: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 5) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14))
-                    .frame(width: 18)
-                VStack(alignment: .leading, spacing: 1) {
+                    .font(.system(size: 11))
+                    .frame(width: 14)
+                VStack(alignment: .leading, spacing: 0) {
                     Text(title)
-                        .font(.system(.callout, design: .default).weight(.medium))
+                        .font(.system(size: 11, weight: .medium))
                     Text(subtitle)
-                        .font(.caption2)
+                        .font(.system(size: 9))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
         }
         .buttonStyle(.bordered)
-        .controlSize(.large)
+        .controlSize(.small)
     }
 }

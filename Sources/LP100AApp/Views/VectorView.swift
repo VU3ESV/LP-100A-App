@@ -13,13 +13,13 @@ struct VectorView: View {
     private var gamma: Double { swr > 1 ? (swr - 1) / (swr + 1) : 0 }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 24) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 16) {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
                     cell(label: "|Z|", value: format(z, 1), unit: "Ω")
                     cell(label: "Phase", value: format(phase, 1), unit: "°")
                 }
-                HStack(spacing: 16) {
+                HStack(spacing: 8) {
                     cell(label: "R (resistive)", value: format(r, 1), unit: "Ω")
                     cell(label: "X (reactive)",
                          value: (x >= 0 ? "+" : "") + format(x, 1),
@@ -29,48 +29,60 @@ struct VectorView: View {
                          value: "\(format(swr, 2))  ·  |Γ| \(format(gamma, 3))")
             }
             CompassView(z: z, phaseDeg: phase)
-                .frame(width: 220, height: 220)
+                .frame(width: 180, height: 180)
         }
     }
 
     private func cell(label: String, value: String, unit: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.12 * 11)
+                .textCase(.uppercase)
                 .foregroundStyle(.secondary)
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(value)
-                    .font(.system(size: 24, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
                     .foregroundStyle(.tint)
                     .monospacedDigit()
                 Text(unit)
-                    .font(.system(.subheadline, design: .monospaced))
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.secondary.opacity(0.06))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5)
         )
     }
 
     private func fullCell(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.12 * 11)
+                .textCase(.uppercase)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 24, weight: .semibold, design: .monospaced))
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
                 .monospacedDigit()
         }
-        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.secondary.opacity(0.06))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5)
         )
     }
 

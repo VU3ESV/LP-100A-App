@@ -18,7 +18,7 @@ struct ContentView: View {
         .sheet(isPresented: $vm.connectionSheetOpen) {
             ConnectionSheet(vm: vm) { vm.connectionSheetOpen = false }
         }
-        .frame(minWidth: 720, minHeight: 540)
+        .frame(minWidth: 820)
         .background(Color(NSColor.windowBackgroundColor))
     }
 
@@ -65,38 +65,63 @@ struct ContentView: View {
     // MARK: - Main pane
 
     private var meterPane: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                if let banner = vm.statusBanner {
-                    BannerLabel(text: banner)
-                }
+        VStack(spacing: 10) {
+            if let banner = vm.statusBanner {
+                BannerLabel(text: banner)
+            }
 
-                Panel {
-                    VStack(alignment: .leading, spacing: 16) {
-                        PanelHeader(
-                            title: vm.setupOpen ? "Setup reference" : sectionTitle,
-                            trailing: callsignAccessory
-                        )
-
-                        Divider()
-
-                        activeView
-                    }
-                }
-
-                Panel {
-                    VStack(alignment: .leading, spacing: 12) {
-                        statusRow
-                        Divider()
-                        KeypadView(vm: vm)
-                    }
+            Panel {
+                VStack(alignment: .leading, spacing: 8) {
+                    PanelHeader(
+                        title: vm.setupOpen ? "Setup reference" : sectionTitle,
+                        trailing: callsignAccessory
+                    )
+                    activeView
                 }
             }
-            .padding(16)
-            .frame(maxWidth: 820)
-            .frame(maxWidth: .infinity)
+
+            CompactPanel {
+                HStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        statusItem(label: "Range",
+                                   value: vm.snapshot?.range.rawValue.capitalized ?? "—")
+                        Spacer(minLength: 4)
+                        statusItem(label: "Mode",
+                                   value: vm.snapshot?.mode.rawValue.replacingOccurrences(of: "_", with: " ").capitalized ?? "—")
+                        Spacer(minLength: 4)
+                        statusItem(label: "Alarm",
+                                   value: vm.snapshot?.alarmSetpoint.rawValue ?? "off",
+                                   tint: (vm.snapshot?.alarmTripped == true) ? .red : .primary)
+                        Spacer(minLength: 4)
+                        statusItem(label: "Link",
+                                   value: linkLabel,
+                                   tint: linkTint)
+                    }
+                    .frame(maxWidth: .infinity)
+                    Divider().frame(height: 22)
+                    KeypadView(vm: vm)
+                }
+            }
         }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .top)
         .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var linkLabel: String {
+        switch vm.connection {
+        case .connected: return "Live"
+        case .reconnecting: return "Reconnecting"
+        case .disconnected: return "Offline"
+        }
+    }
+
+    private var linkTint: Color {
+        switch vm.connection {
+        case .connected: return .green
+        case .reconnecting: return .yellow
+        case .disconnected: return .red
+        }
     }
 
     private var sectionTitle: String {
@@ -112,10 +137,8 @@ struct ContentView: View {
             SetupOverlay(vm: vm)
         } else if vm.currentView == "vector" {
             VectorView(snapshot: vm.snapshot)
-                .frame(minHeight: 260)
         } else {
             NormalView(snapshot: vm.snapshot, peakPwr: vm.peakPwr, peakSwr: vm.peakSwr)
-                .frame(minHeight: 200)
         }
     }
 
@@ -129,33 +152,16 @@ struct ContentView: View {
         )
     }
 
-    private var statusRow: some View {
-        HStack(spacing: 18) {
-            statusItem(label: "Power range",
-                       value: vm.snapshot?.range.rawValue.capitalized ?? "—")
-            statusItem(label: "Peak mode",
-                       value: vm.snapshot?.mode.rawValue.replacingOccurrences(of: "_", with: " ").capitalized ?? "—")
-            statusItem(label: "Alarm",
-                       value: vm.snapshot?.alarmSetpoint.rawValue ?? "off",
-                       tint: (vm.snapshot?.alarmTripped == true) ? .red : .primary)
-            Spacer()
-            if vm.connection != .connected {
-                Label("Not connected", systemImage: "wifi.slash")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private func statusItem(label: String, value: String, tint: Color = .primary) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 1) {
             Text(label)
-                .font(.caption)
+                .font(.system(size: 9))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.body.weight(.medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(tint)
                 .monospacedDigit()
+                .lineLimit(1)
         }
     }
 }

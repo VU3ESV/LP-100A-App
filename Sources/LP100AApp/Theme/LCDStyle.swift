@@ -1,29 +1,47 @@
 import SwiftUI
 
-// Native-styled panels replacing the prior LCD case/bezel. The instrument
-// readouts live inside a single GroupBox-equivalent rounded surface using
-// the system's regular material so it sits comfortably in any window
-// background (light/dark/vibrant).
+// Native-styled panel surface for instrument readouts. Mirrors the
+// LP-700-App `Panel` so the two clients feel like siblings.
 struct Panel<Content: View>: View {
+    var padding: CGFloat = 10
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         content()
-            .padding(20)
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(.regularMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5)
             )
     }
 }
 
-// Section header used inside panels — small caps, secondary color, with
-// an optional trailing accessory (e.g. callsign).
+// Compact variant used for the bottom status / keypad row.
+struct CompactPanel<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.regularMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5)
+            )
+    }
+}
+
+// Small-caps section header — 11pt semibold uppercase with extra letter
+// spacing, secondary tint. Matches LP-700-App's `PanelHeader`.
 struct PanelHeader: View {
     var title: String
     var trailing: AnyView? = nil
@@ -36,10 +54,12 @@ struct PanelHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.12 * 11)
                 .foregroundStyle(.secondary)
+                .textCase(.uppercase)
             Spacer()
-            trailing
+            if let trailing { trailing }
         }
     }
 }

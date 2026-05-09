@@ -28,6 +28,7 @@ struct LP100AApp: App {
         }
         .commands { menuCommands }
         .windowResizability(.contentMinSize)
+        .defaultSize(width: 820, height: 440)
 
         Settings {
             PreferencesView(vm: vm)

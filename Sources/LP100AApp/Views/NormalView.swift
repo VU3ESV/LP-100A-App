@@ -1,134 +1,160 @@
 import SwiftUI
 
-// Power & SWR readouts. The bargraph fills retain functional color
-// (teal / yellow / red) but everything around them uses system colors so
-// the panel feels native in light or dark mode.
+// Power & SWR readout panel modeled after LP-700-App's PowerSWRView. Two
+// reading cards on top (Power + SWR), then a compact info row with dBW /
+// dBm / Z / phase. The bargraph is a slim Capsule below the big numeric
+// — color-thresholded so signal severity reads at a glance.
 struct NormalView: View {
     var snapshot: Telemetry?
     var peakPwr: Double
     var peakSwr: Double
 
     var body: some View {
-        let d = snapshot
-        HStack(alignment: .top, spacing: 24) {
-            VStack(spacing: 18) {
-                pwrBar(d: d)
-                swrBar(d: d)
+        VStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                ReadingCard(label: "Power",
+                            value: formatPower(snapshot?.powerW),
+                            tint: .accentColor,
+                            bar: powerBar)
+                ReadingCard(label: "SWR",
+                            value: (String(format: "%.2f", snapshot?.swr ?? 1.0), ""),
+                            tint: swrTint(snapshot?.swr ?? 1.0),
+                            bar: swrBar)
             }
-            Divider()
-            readouts(d: d)
-                .frame(minWidth: 180, idealWidth: 220, maxWidth: 240)
+
+            CompactPanel {
+                HStack(spacing: 8) {
+                    statusItem(label: "dBW", value: snapshot.map { String(format: "%.1f", $0.dbw) } ?? "—")
+                    Spacer(minLength: 4)
+                    statusItem(label: "dBm", value: snapshot.map { String(format: "%.1f", $0.dbm) } ?? "—")
+                    Spacer(minLength: 4)
+                    statusItem(label: "|Z|", value: snapshot.map { String(format: "%.1f Ω", $0.zOhm) } ?? "—")
+                    Spacer(minLength: 4)
+                    statusItem(label: "Phase", value: snapshot.map { String(format: "%.1f°", $0.phaseDeg) } ?? "—")
+                    Spacer(minLength: 4)
+                    statusItem(label: "Peak (W)",
+                               value: peakPwr > 0 ? String(format: "%.1f", peakPwr) : "—")
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 
-    private func pwrBar(d: Telemetry?) -> some View {
-        let range = d?.range ?? .high
-        let pwr = d?.powerW ?? 0
-        let max = RangeScale.max(for: range)
-        let frac = max > 0 ? pwr / max : 0
-        let peakFrac = max > 0 ? peakPwr / max : 0
-        let suffix = PowerModeSuffix.suffix(for: d?.mode ?? .average)
-        let valueText = d.map { String(format: "%.1f \(suffix)", $0.powerW) } ?? "—"
-        let scaleLabel = "\(range.rawValue.capitalized) · 0–\(Int(max)) W"
+    // MARK: - Bar configs
 
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Power")
-                    .font(.subheadline.weight(.semibold))
-                Text(scaleLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(valueText)
-                    .font(.system(.subheadline, design: .monospaced))
-                    .foregroundStyle(.primary)
-            }
-            BargraphView(
-                fillFraction: frac,
-                peakFraction: peakFrac,
-                fillStyle: .normal,
-                ticks: RangeScale.ticks(for: range)
-            )
-        }
+    private var powerBar: ReadingCard.BarConfig {
+        let scale = RangeScale.max(for: snapshot?.range ?? .high)
+        let frac = (snapshot?.powerW ?? 0) / scale
+        return ReadingCard.BarConfig(fraction: frac, scale: scale, baseTint: .cyan)
     }
 
-    private func swrBar(d: Telemetry?) -> some View {
-        let swr = d?.swr ?? 1.0
+    private var swrBar: ReadingCard.BarConfig {
+        let swr = snapshot?.swr ?? 1.0
         let frac = (swr - 1.0) / (SWRScale.max - 1.0)
-        let peakFrac = (peakSwr - 1.0) / (SWRScale.max - 1.0)
-        let style: BargraphView.FillStyle = {
-            if swr >= SWRScale.badThreshold { return .bad }
-            if swr >= SWRScale.warnThreshold { return .warn }
-            return .normal
-        }()
-        let valueText = d.map { String(format: "%.2f", $0.swr) } ?? "—"
-
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("SWR")
-                    .font(.subheadline.weight(.semibold))
-                Text("1.0 → 5.0")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(valueText)
-                    .font(.system(.subheadline, design: .monospaced))
-                    .foregroundStyle(.primary)
-            }
-            BargraphView(
-                fillFraction: frac,
-                peakFraction: peakFrac,
-                fillStyle: style,
-                ticks: ["1.0", "1.2", "1.5", "2.0", "2.5", "3.0", "5.0"]
-            )
-        }
+        return ReadingCard.BarConfig(fraction: frac, scale: SWRScale.max, baseTint: .green)
     }
 
-    private func readouts(d: Telemetry?) -> some View {
-        VStack(alignment: .trailing, spacing: 18) {
-            powerReadout(d: d)
-            swrReadout(d: d)
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
+    private func formatPower(_ w: Double?) -> (value: String, unit: String) {
+        guard let w, !w.isNaN else { return ("—", "W") }
+        let suffix = PowerModeSuffix.suffix(for: snapshot?.mode ?? .average)
+        if w >= 1000 { return (String(format: "%.2f", w / 1000.0), "k\(suffix)") }
+        if w >= 100  { return (String(format: "%.0f", w), suffix) }
+        return (String(format: "%.1f", w), suffix)
     }
 
-    private func powerReadout(d: Telemetry?) -> some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            let pwr = d.map { String(format: "%.1f", $0.powerW) } ?? "—"
-            let unit = PowerModeSuffix.suffix(for: d?.mode ?? .average)
+    private func swrTint(_ swr: Double) -> Color {
+        if swr >= SWRScale.badThreshold { return .red }
+        if swr >= SWRScale.warnThreshold { return .yellow }
+        return .accentColor
+    }
+
+    private func statusItem(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.primary)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+    }
+}
+
+// MARK: - ReadingCard (the LP-700 visual signature)
+
+struct ReadingCard: View {
+    var label: String
+    var value: (value: String, unit: String)
+    var tint: Color
+    var bar: BarConfig? = nil
+
+    struct BarConfig {
+        var fraction: Double
+        var scale: Double
+        var baseTint: Color
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            PanelHeader(title: label)
             HStack(alignment: .lastTextBaseline, spacing: 4) {
-                Text(pwr)
-                    .font(.system(size: 44, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.tint)
+                Text(value.value)
+                    .font(.system(size: 40, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                Text(unit)
-                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.tint.opacity(0.8))
+                    .foregroundColor(tint)
+                if !value.unit.isEmpty {
+                    Text(value.unit)
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                }
             }
-            let dbw = d.map { String(format: "%.1f", $0.dbw) } ?? "—"
-            let dbm = d.map { String(format: "%.1f", $0.dbm) } ?? "—"
-            Text("\(dbw) dBW · \(dbm) dBm")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if let bar {
+                PowerBar(fraction: bar.fraction, baseTint: bar.baseTint)
+                Text("0 / \(formatScale(bar.scale))")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5)
+        )
     }
 
-    private func swrReadout(d: Telemetry?) -> some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            HStack(alignment: .lastTextBaseline, spacing: 8) {
-                Text("SWR")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                Text(d.map { String(format: "%.2f", $0.swr) } ?? "—")
-                    .font(.system(size: 30, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
+    private func formatScale(_ w: Double) -> String {
+        if w >= 1000 { return String(format: "%g kW", w / 1000.0) }
+        if abs(w - SWRScale.max) < 0.001 { return String(format: "%.1f", w) }
+        return String(format: "%g W", w)
+    }
+}
+
+private struct PowerBar: View {
+    var fraction: Double
+    var baseTint: Color
+
+    var body: some View {
+        let f = max(0, min(1, fraction))
+        let color: Color = {
+            if fraction >= 0.95 { return .red }
+            if fraction >= 0.80 { return .yellow }
+            return baseTint
+        }()
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.18))
+                Capsule().fill(color.gradient)
+                    .frame(width: max(2, geo.size.width * f))
             }
-            let z = d.map { String(format: "%.1f", $0.zOhm) } ?? "—"
-            let phase = d.map { String(format: "%.1f", $0.phaseDeg) } ?? "—"
-            Text("Z \(z) Ω · ∠ \(phase)°")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
         }
+        .frame(height: 6)
     }
 }
