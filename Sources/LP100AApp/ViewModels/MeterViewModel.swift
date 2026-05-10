@@ -45,14 +45,84 @@ final class MeterViewModel: ObservableObject {
 
     // UI publish coalescing. The server pushes telemetry at ~10 Hz on a
     // 100 ms poll cadence; a human can't read more than ~5 numbers/sec.
-    // Coalesce to 5 Hz so SwiftUI body re-evaluation cost (and the menu-
-    // bar label re-render that piggybacks on every objectWillChange) is
-    // bounded. Inverse knob: drop `publishInterval` to 0.1 if smoother
-    // bargraph motion is wanted.
-    static let publishInterval: TimeInterval = 0.2
+    // Coalesce to 2 Hz — every layout pass walks the toolbar +
+    // meter-face + keypad + menu-bar-label tree, which is tens of ms of
+    // work at idle. Combined with the publish-time signature dedup
+    // below, this caps the SwiftUI layout cost at ~2 invalidations/sec
+    // when values genuinely change, and ~0 invalidations/sec when the
+    // meter is at noise-floor wobble. Inverse knob: drop to 0.2 (5 Hz)
+    // if smoother bargraph motion is wanted during sustained TX.
+    static let publishInterval: TimeInterval = 0.5
     private var pendingSnapshot: Telemetry?
     private var lastPublishAt: Date = .distantPast
     private var publishTask: Task<Void, Never>?
+
+    /// Display-level signature of the last published snapshot. Computed
+    /// once at commit time; comparing the new candidate against this is
+    /// dramatically cheaper than letting SwiftUI re-evaluate the whole
+    /// view subtree and discover via `Equatable` at the leaves that
+    /// nothing visible moved. This is the dominant CPU win on noise-
+    /// floor wobble (Z/phase jiggle ~0.1 between polls but round to the
+    /// same `%.1f` strings).
+    private var lastPublishedSignature: PublishSignature?
+
+    private struct PublishSignature: Equatable {
+        let powerStr: String
+        let powerSuffix: String
+        let swrStr: String
+        let dbwStr: String
+        let dbmStr: String
+        let zStr: String
+        let phaseStr: String
+        let range: PowerRange
+        let mode: PeakMode
+        let alarmSetpoint: AlarmSetpoint
+        let alarmTripped: Bool
+        let callsign: String
+        let powerBarBucket: Int   // 0…100, quantized to 1 % steps
+        let swrBarBucket: Int     // ditto, on the 1.0 → 5.0 scale
+
+        init(_ d: Telemetry) {
+            // Mirror the formatting in NormalView.NormalModel.make so
+            // the signature is exactly the set of strings the view will
+            // produce. Power suffix follows the LP-100A LCD convention
+            // (lower-case `w` for Average must not be uppercased).
+            let suffix = PowerModeSuffix.suffix(for: d.mode)
+            if d.powerW >= 1000 {
+                powerStr = String(format: "%.2f", d.powerW / 1000.0)
+                powerSuffix = "k\(suffix)"
+            } else if d.powerW >= 100 {
+                powerStr = String(format: "%.0f", d.powerW)
+                powerSuffix = suffix
+            } else {
+                powerStr = String(format: "%.1f", d.powerW)
+                powerSuffix = suffix
+            }
+            swrStr = String(format: "%.2f", d.swr)
+            // dBW / dBm / |Z| / phase are formatted with one fewer
+            // decimal here than the raw value would support — at the
+            // LP-100A's noise floor these all wobble at the 0.05–0.1
+            // level and showing every wobble buys nothing visible.
+            // Quantising at format time stabilises the signature so
+            // signature-equal frames skip the publish entirely.
+            dbwStr = String(format: "%.0f", d.dbw.rounded())
+            dbmStr = String(format: "%.0f", d.dbm.rounded())
+            zStr = String(format: "%.0f Ω", d.zOhm.rounded())
+            phaseStr = String(format: "%.0f°", d.phaseDeg.rounded())
+            range = d.range
+            mode = d.mode
+            alarmSetpoint = d.alarmSetpoint
+            alarmTripped = d.alarmTripped
+            callsign = d.callsign
+
+            let pwrScale = RangeScale.max(for: d.range)
+            powerBarBucket = pwrScale > 0
+                ? Int((d.powerW / pwrScale * 100).rounded())
+                : 0
+            let swrFrac = (d.swr - 1.0) / (SWRScale.max - 1.0)
+            swrBarBucket = Int((swrFrac * 100).rounded())
+        }
+    }
 
     private let log = Logger(subsystem: "com.vu3esv.lp100a-app", category: "viewmodel")
 
@@ -108,6 +178,9 @@ final class MeterViewModel: ObservableObject {
         publishTask?.cancel()
         publishTask = nil
         pendingSnapshot = nil
+        // Reset so the first frame of a fresh connection always
+        // publishes (no stale signature carries across reconnects).
+        lastPublishedSignature = nil
         await ws?.stop()
         ws = nil
     }
@@ -238,8 +311,17 @@ final class MeterViewModel: ObservableObject {
         publishTask = nil
         guard let p = pendingSnapshot else { return }
         pendingSnapshot = nil
-        snapshot = p
+        // Source-level dedup: skip the @Published mutation entirely if
+        // none of the displayed values would change. SwiftUI never gets
+        // invalidated for noise-floor wobble that rounds to the same
+        // formatted strings + 1 %-quantized bargraph buckets. This is
+        // dramatically cheaper than letting the view subtree's
+        // `Equatable.equatable()` discover the same fact downstream.
+        let sig = PublishSignature(p)
         lastPublishAt = Date()
+        if sig == lastPublishedSignature { return }
+        lastPublishedSignature = sig
+        snapshot = p
     }
 
     private func handleAlarmEdge(data: Telemetry) {

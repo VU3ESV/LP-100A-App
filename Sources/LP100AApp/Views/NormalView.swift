@@ -50,10 +50,14 @@ extension NormalModel {
             swrTint: swrTintColor(snapshot?.swr ?? 1.0),
             powerBar: bar(for: snapshot?.powerW, scale: scale, baseTint: .cyan),
             swrBar: bar(for: swrFraction(snapshot?.swr ?? 1.0), scale: SWRScale.max, baseTint: .green, isUnitFraction: true),
-            dbw: snapshot.map { String(format: "%.1f", $0.dbw) } ?? "—",
-            dbm: snapshot.map { String(format: "%.1f", $0.dbm) } ?? "—",
-            zOhm: snapshot.map { String(format: "%.1f Ω", $0.zOhm) } ?? "—",
-            phase: snapshot.map { String(format: "%.1f°", $0.phaseDeg) } ?? "—"
+            // dBW / dBm / |Z| / phase shown to whole-unit precision —
+            // matches the publish-side signature so noise-floor wobble
+            // doesn't produce a fresh model each frame. The wire still
+            // carries 0.1 precision; it's just not displayed.
+            dbw: snapshot.map { String(format: "%.0f", $0.dbw.rounded()) } ?? "—",
+            dbm: snapshot.map { String(format: "%.0f", $0.dbm.rounded()) } ?? "—",
+            zOhm: snapshot.map { String(format: "%.0f Ω", $0.zOhm.rounded()) } ?? "—",
+            phase: snapshot.map { String(format: "%.0f°", $0.phaseDeg.rounded()) } ?? "—"
         )
     }
 }

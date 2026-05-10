@@ -1,6 +1,6 @@
 # Architecture review — LP-100A-App
 
-**Date:** 2026-05-09 · **Status:** v0.2.6 (perf pass — telemetry coalescing + Equatable subtree)
+**Date:** 2026-05-10 · **Status:** v0.2.7 (perf pass II — publish-side dedup + 2 Hz + coarsened signature)
 
 ## Telemetry coalescing and render budgets
 
@@ -17,17 +17,37 @@ so we cap UI-driving work at three layers:
    fewer JSON decodes — the substring scan is cheap, the JSON parse is
    not.
 
-2. **MeterViewModel coalesces `@Published var snapshot` to ≤5 Hz.**
-   Inbound telemetry events update a private `pendingSnapshot`; a
-   single trailing `publishTask` commits the latest pending value to
-   `snapshot` after the 200 ms window. `handleAlarmEdge` runs on every
-   inbound frame so notifications stay timely; only the SwiftUI
-   mutation path is throttled. `stop()` cancels the publish task and
-   clears `pendingSnapshot` on disconnect.
+2. **MeterViewModel coalesces `@Published var snapshot` to ≤2 Hz, with
+   publish-side display dedup.** Inbound telemetry events update a
+   private `pendingSnapshot`; a single trailing `publishTask` commits
+   the latest pending value to `snapshot` after the 500 ms window.
+   `handleAlarmEdge` runs on every inbound frame so notifications stay
+   timely; only the SwiftUI mutation path is throttled. `stop()`
+   cancels the publish task and clears `pendingSnapshot` on disconnect.
 
-   Inverse knob: drop `MeterViewModel.publishInterval` to `0.1` (10 Hz)
-   if smoother bargraph motion is wanted. The 5 Hz default trades
-   fluency for halved layout work.
+   At commit time, the candidate snapshot is reduced to a
+   `PublishSignature` (Equatable struct of the formatted strings the
+   view will display + 1 %-quantized bargraph buckets). If the
+   signature equals the last published one, the `@Published`
+   mutation is **skipped entirely** — SwiftUI never gets invalidated
+   for noise-floor wobble that rounds to the same on-screen text.
+   When the user is transmitting and values genuinely move, dedup
+   passes through; when the meter is idling at noise floor, body
+   re-evals can drop to ≈0/sec. This is the dominant win — Equatable
+   leaves below this layer can short-circuit, but they still cost a
+   model construction + tree comparison; the publish-side dedup
+   never even allocates a SwiftUI invalidation.
+
+   The dBW / dBm / |Z| / phase fields in `NormalView` and the
+   signature both quantize to whole-unit precision. Wire values still
+   carry 0.1 — it's just not displayed. At noise floor (Z bouncing
+   47.7 ↔ 48.0, phase 80.2 ↔ 80.5) the rounded strings settle on a
+   single value, letting the signature stabilise. Power and SWR keep
+   `%.1f` / `%.2f` since those are the headline readouts.
+
+   Inverse knob: drop `MeterViewModel.publishInterval` to `0.2` (5 Hz)
+   if smoother bargraph motion is wanted during sustained TX. The
+   2 Hz default trades fluency for ~5× lower idle CPU.
 
 3. **Value-typed view subtree + layered Equatable.** `ContentView`
    builds a `NormalModel` (Equatable struct: pre-formatted strings,
@@ -57,20 +77,31 @@ so we cap UI-driving work at three layers:
    busy. Removing it (combined with the quantized fraction) lets
    `Equatable` actually short-circuit re-renders.
 
-**Empirical:** measured by `top -l N -s 1 -pid` against a real
-`192.168.86.43:8088` server with the meter idling at noise floor
-(~10 frames/sec on the wire, no TX):
+**Empirical:** measured by `ps -o %cpu` over 20 × 1 s windows against
+a real `192.168.86.43:8088` server with the meter idling at noise
+floor (~10 frames/sec on the wire, Z bouncing 47.7–48.0 Ω, phase
+79.5–80.5°, no TX):
 
-| Version | Idle CPU |
-|---|---|
-| v0.2.5 | ~9.9 % |
-| v0.2.6 | ~0.0 % |
+| Version | Idle CPU (mean) | Notes |
+|---|---|---|
+| v0.2.5 | ~9.9 % | Baseline. |
+| v0.2.6 | ~9.8 % | First perf pass (5 Hz throttle + Equatable subtree). The earlier "0 %" reading was a `top -l 10 -s 1` sampling artifact — formatted `%.1f` strings still changed ~50 % of frames so layout cost dominated. |
+| v0.2.7 | **0.82 %** (median 0.30 %) | Publish-side display dedup + 2 Hz coalesce + whole-unit signature for Z / phase / dBW / dBm. SwiftUI body never gets invalidated for telemetry that rounds to the same on-screen display. |
 
-The drop is dominated by (a) skipping the JSON decode for ~half the
-inbound frames and (b) `Equatable.equatable()` letting the entire
-`NormalView` subtree skip body re-evaluation when `formatPower`
-rounds two adjacent snapshots to the same display string and the bar
-fraction quantizes to the same step.
+The dominant win is the publish-side dedup combined with coarser
+quantization on the noise-prone fields: SwiftUI never sees a body
+invalidation for telemetry that rounds to the same on-screen
+display, so the toolbar + meter-face + keypad + menu-bar-label
+layout walk doesn't run at idle. Single-digit % spikes still occur
+when a value crosses a bucket boundary (one layout pass), but the
+window between them lengthens to several seconds.
+
+The original v0.2.6 layer 3 (value-typed `NormalModel` +
+`Equatable.equatable()` on `NormalView`, `ReadingCard`, `PowerBar`,
+`ConnectionBadge`) is still in place — it's a defence-in-depth that
+short-circuits any leaf re-render the source-level dedup didn't
+already prevent (e.g. on the first frame of a new TX or when a
+bucket boundary is crossed but only one of the two cards moved).
 
 ## Changes since v0.2 baseline
 
@@ -97,21 +128,38 @@ clients read as the same product family on the same desk:
   three. Restored the `Divider()` after PanelHeader and bumped inner
   spacing 8 → 10 pt to match LP-700 verbatim.
 - **v0.2.5** — screenshot launch flags + docs refresh.
-- **v0.2.6** — profile-driven CPU pass. Idle CPU during connected
-  telemetry dropped from ~9.9 % to ~0 % via three changes mirroring
-  VU3ESV/LP-700-App's c52fe11 + bec7c74 commits:
-    1. WSClient discriminates telemetry vs heartbeat/status/ack with a
-       cheap `String.contains("\"power_w\"")` and skips JSON decode
-       inside the 200 ms window.
-    2. MeterViewModel coalesces `@Published var snapshot` to 5 Hz
-       (`pendingSnapshot` + trailing `publishTask`); alarm-edge
-       detection still runs on every inbound frame.
-    3. NormalView factored onto a value-typed `NormalModel` (Equatable
-       over pre-formatted strings + 1 %-quantized bar fractions);
-       `ReadingCard`, `PowerBar`, `NormalView`, `ConnectionBadge` all
-       Equatable + `.equatable()` at their call sites; the dead
-       client-side `peakPwr/peakSwr` decay loop deleted along with the
-       "Peak (W)" info-strip cell. See [§ Telemetry coalescing](#telemetry-coalescing-and-render-budgets)
+- **v0.2.6** — first profile-driven CPU pass. Mirrors LP-700-App's
+  c52fe11 + bec7c74 commits: WSClient throttles telemetry decode to
+  5 Hz, MeterViewModel coalesces publishes to 5 Hz, `NormalView`
+  factored onto a value-typed `NormalModel` with Equatable cards.
+  Initial measurement showed 0 % CPU (a `top -l 10 -s 1` sampling
+  artifact) but the real cost was still ~9.8 % because formatted
+  `%.1f` strings still changed ~half the frames at noise-floor
+  wobble — Equatable couldn't short-circuit and layout still ran at
+  ~2.5 Hz on the full toolbar + meter + keypad tree.
+- **v0.2.7** — second profile-driven CPU pass. Idle CPU dropped from
+  ~9.8 % to mean **0.82 % / median 0.30 %**. Three additive
+  refinements on top of v0.2.6:
+    1. **Publish-side display signature dedup** in
+       `MeterViewModel.commitPending`. A `PublishSignature` Equatable
+       struct mirrors the formatted strings + 1 %-bar-bucket the
+       view will produce; the `@Published` snapshot mutation is
+       skipped entirely if the signature matches the last published
+       one. SwiftUI never gets a body invalidation for noise-floor
+       wobble that rounds to the same on-screen display.
+    2. **Coarsened display precision** for noise-prone fields.
+       dBW / dBm / |Z| / phase round to whole units in both the
+       view (`NormalView`) and the signature, so noise-floor jitter
+       (Z 47.7 ↔ 48.0, phase 79.5 ↔ 80.5) settles on a single value
+       and lets the dedup catch it. Power and SWR keep `%.1f` /
+       `%.2f` since those are the headline readouts.
+    3. **2 Hz publish rate** (`publishInterval: 0.5`, was 0.2). Caps
+       the layout pass cadence even when values do change. WSClient
+       `telemetryMinInterval` matched (0.5) — no point decoding
+       faster than the view-model can publish. Inverse knob:
+       drop to 0.2 (5 Hz) for smoother bargraph motion if needed.
+
+       See [§ Telemetry coalescing](#telemetry-coalescing-and-render-budgets)
        for the full picture.
 
 ## Changes since v0.1

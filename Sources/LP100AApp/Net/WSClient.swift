@@ -32,10 +32,12 @@ actor WSClient {
     private let encoder = JSONEncoder()
 
     // Coalesce telemetry frames at the receive side so JSONDecoder runs
-    // at most ~5 Hz regardless of the meter's poll cadence (typically
-    // ~10 Hz for LP-100A). Heartbeat/status/ack frames are always
-    // decoded — they're rare or already infrequent.
-    private let telemetryMinInterval: TimeInterval = 0.2
+    // at most ~2 Hz regardless of the meter's poll cadence (typically
+    // ~10 Hz for LP-100A). Matches MeterViewModel.publishInterval —
+    // there's no point decoding faster than the view-model can
+    // publish. Heartbeat / status / ack frames don't carry the
+    // telemetry hint and always decode.
+    private let telemetryMinInterval: TimeInterval = 0.5
     private var lastTelemetryDecodedAt: Date = .distantPast
     // `"power_w"` is unique to telemetry frames (the meter snapshot
     // body). Heartbeat / status / ack don't carry it. Cheap substring
