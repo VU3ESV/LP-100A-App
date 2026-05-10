@@ -26,9 +26,18 @@ struct MenuBarLabel: View {
 
 struct MenuBarContent: View {
     @ObservedObject var vm: MeterViewModel
-    var onShowMain: () -> Void
-    var onConnect: () -> Void
     var onQuit: () -> Void
+    @Environment(\.openWindow) private var openWindow
+
+    // Restore (or focus) the singleton "main" Window scene declared in
+    // App.swift. `openWindow(id:)` works for `Window` scenes that have
+    // been closed — `WindowGroup` would have disposed of them. The
+    // explicit `NSApp.activate` is needed because clicking a menu-bar
+    // item doesn't activate the host app on its own.
+    private func showMain() {
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -39,12 +48,12 @@ struct MenuBarContent: View {
             row("Alarm", value: vm.snapshot?.alarmSetpoint.rawValue ?? "off")
             Divider()
             Button("Show LP-100A Window") {
-                onShowMain()
+                showMain()
             }
             .keyboardShortcut("o", modifiers: [.command])
             Button("Connect to Server…") {
-                onConnect()
-                onShowMain()
+                showMain()
+                vm.connectionSheetOpen = true
             }
             Divider()
             Button("Quit") { onQuit() }

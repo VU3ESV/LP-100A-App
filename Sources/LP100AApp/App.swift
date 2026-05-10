@@ -12,7 +12,12 @@ struct LP100AApp: App {
     @AppStorage("menuBarItemEnabled") private var menuBarEnabled: Bool = true
 
     var body: some Scene {
-        WindowGroup {
+        // `Window` (not `WindowGroup`) is a singleton scene: closing the
+        // red-dot button hides it instead of disposing the SwiftUI scene,
+        // and `openWindow(id: "main")` from the menu-bar restores it.
+        // With `WindowGroup`, the window is fully torn down on close, so
+        // there is nothing for "Show LP-100A Window" to bring forward.
+        Window("LP-100A", id: "main") {
             ContentView(vm: vm)
                 .background(OpenPrefsCapture())
                 .task { await bootstrap() }
@@ -36,12 +41,7 @@ struct LP100AApp: App {
         }
 
         MenuBarExtra(isInserted: $menuBarEnabled) {
-            MenuBarContent(
-                vm: vm,
-                onShowMain: { showMainWindow() },
-                onConnect: { vm.connectionSheetOpen = true },
-                onQuit: { NSApp.terminate(nil) }
-            )
+            MenuBarContent(vm: vm, onQuit: { NSApp.terminate(nil) })
         } label: {
             MenuBarLabel(vm: vm)
         }
@@ -119,14 +119,6 @@ struct LP100AApp: App {
         }
     }
 
-    private func showMainWindow() {
-        if let win = NSApp.windows.first(where: { $0.styleMask.contains(.titled) && $0.contentView != nil }) {
-            win.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
-    }
 }
 
 // Invisible helper that pops the Settings window when `--open-prefs` is on
@@ -154,5 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         let menuBar = UserDefaults.standard.object(forKey: "menuBarItemEnabled") as? Bool ?? true
         return !menuBar
+    }
+
+    // Dock-icon click after the main window was closed. With the singleton
+    // `Window` scene, AppKit re-orders the hidden window front when this
+    // returns true; without overriding, the bounce is a no-op.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        return true
     }
 }
