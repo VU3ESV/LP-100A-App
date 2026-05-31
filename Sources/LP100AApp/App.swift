@@ -4,14 +4,19 @@ import AppKit
 import UserNotifications
 #endif
 
-@main
-struct LP100AApp: App {
+/// Standalone-app entry. In the suite this type is unused (the container owns
+/// the process); the plugin path is `LP100APlugin`. Kept `public` so the thin
+/// `LP100AAppMain` executable target can call `.main()` on it.
+public struct LP100AStandaloneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var vm = MeterViewModel()
-    @AppStorage("serverURL") private var serverURL: String = ""
-    @AppStorage("menuBarItemEnabled") private var menuBarEnabled: Bool = true
 
-    var body: some Scene {
+    public init() {}
+
+    @AppStorage("serverURL", store: AppDefaults.store) private var serverURL: String = ""
+    @AppStorage("menuBarItemEnabled", store: AppDefaults.store) private var menuBarEnabled: Bool = true
+
+    public var body: some Scene {
         // `Window` (not `WindowGroup`) is a singleton scene: closing the
         // red-dot button hides it instead of disposing the SwiftUI scene,
         // and `openWindow(id: "main")` from the menu-bar restores it.
