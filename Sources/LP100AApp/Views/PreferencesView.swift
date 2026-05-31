@@ -2,8 +2,8 @@ import SwiftUI
 
 struct PreferencesView: View {
     @ObservedObject var vm: MeterViewModel
-    @AppStorage("alarmNotifications") var alarmNotifications: Bool = true
-    @AppStorage("menuBarItemEnabled") var menuBarItemEnabled: Bool = true
+    @AppStorage("alarmNotifications", store: AppDefaults.store) var alarmNotifications: Bool = true
+    @AppStorage("menuBarItemEnabled", store: AppDefaults.store) var menuBarItemEnabled: Bool = true
 
     var body: some View {
         TabView {
