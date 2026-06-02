@@ -14,7 +14,7 @@ let package = Package(
         // RadioPluginKit is consumed as a published library by Git URL, so both
         // this repo's CI (which checks out only this repo) and the suite container
         // resolve the same tag — no sibling checkout required.
-        .package(url: "https://github.com/VU3ESV/RadioPluginKit.git", from: "1.0.0"),
+        .package(url: "https://github.com/VU3ESV/RadioPluginKit.git", from: "1.1.0"),
     ],
     targets: [
         .target(
