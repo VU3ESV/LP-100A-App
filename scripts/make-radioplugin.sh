@@ -36,8 +36,10 @@ STAGE="$(mktemp -d)"
 cp "Xcode/Extension/plugin.json" "$STAGE/plugin.json"
 cp -R "$APPEX" "$STAGE/"
 
-rm -rf "$DIST"
+# Only manage our own package — do NOT wipe $DIST, which in a release pipeline also
+# holds the standalone .app/.dmg built by build-app.sh / make-dmg.sh.
 mkdir -p "$DIST"
+rm -f "$PKG"
 PKG_ABS="$PWD/$PKG"
 # plugin.json at the archive ROOT (what PackageInstaller looks for first); --norsrc
 # --noextattr keeps the zip clean (no __MACOSX AppleDouble entries that would add a

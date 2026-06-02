@@ -28,3 +28,13 @@ jobs:
         env:
           VERSION: ci-${{ github.sha }}
         run: ./scripts/build-app.sh
+
+      - name: Build plugin package (.appex / .radioplugin)
+        run: |
+          # XcodeGen emits a recent project format; select the newest installed Xcode
+          # so xcodebuild can read it (the runner default may be older).
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          ./scripts/make-radioplugin.sh
+          ls -lh dist/LP100A.radioplugin

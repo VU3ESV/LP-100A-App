@@ -1,18 +1,37 @@
 name: Release
 
+# Triggered three ways, all of which produce a public GitHub Release:
+#   1. Push to `main` (i.e. after a PR merge) — auto-bumps the latest clean
+#      `vX.Y.Z` tag by $BUMP (patch by default) and cuts a Release at the merge commit.
+#   2. Push a `vX.Y.Z` tag — uses the tag as-is.
+#   3. Manual `workflow_dispatch` with a version input.
+
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. 0.1.0). For ad-hoc release builds without a git tag.'
+        description: 'Version (e.g. 0.1.0). A matching git tag `vX.Y.Z` is created at the current commit.'
         required: true
         type: string
+      prerelease:
+        description: 'Mark this release as a pre-release (so it does not become "latest").'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
+
+env:
+  BUMP: patch        # auto-bump strategy for push-to-main runs: patch | minor | major
 
 jobs:
   release:
@@ -23,71 +42,123 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve version
+      - name: Resolve version + tag
         id: ver
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
+          set -euo pipefail
+          EVENT="${{ github.event_name }}"
+          REF="${GITHUB_REF}"
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
             V="${{ inputs.version }}"
-          else
+          elif [ "$EVENT" = "push" ] && [[ "$REF" == refs/tags/* ]]; then
             V="${GITHUB_REF_NAME#v}"
+          else
+            # push to main — auto-bump from the latest clean semver tag.
+            if git tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "HEAD already tagged with a release version. Skipping auto-release."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            LATEST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
+            if [ -z "$LATEST" ]; then
+              V="0.1.0"
+            else
+              IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+              case "$BUMP" in
+                major) V="$((MAJOR + 1)).0.0" ;;
+                minor) V="$MAJOR.$((MINOR + 1)).0" ;;
+                patch|*) V="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+              esac
+            fi
+            while git rev-parse "refs/tags/v$V" >/dev/null 2>&1; do
+              IFS=. read -r MAJOR MINOR PATCH <<< "$V"
+              V="$MAJOR.$MINOR.$((PATCH + 1))"
+            done
           fi
           echo "value=$V" >> "$GITHUB_OUTPUT"
-          echo "Building release $V"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Building release v$V"
 
       - name: Show toolchain
+        if: steps.ver.outputs.skip != 'true'
         run: |
           xcodebuild -version
           swift --version
 
       - name: Test
+        if: steps.ver.outputs.skip != 'true'
         run: swift test
 
       - name: Build universal .app
+        if: steps.ver.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.ver.outputs.value }}
         run: ./scripts/build-app.sh
 
       - name: Build DMG
+        if: steps.ver.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.ver.outputs.value }}
         run: ./scripts/make-dmg.sh
 
+      - name: Build plugin package (.appex / .radioplugin)
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          ./scripts/make-radioplugin.sh
+          cp dist/LP100A.radioplugin dist/LP-100A-App-${{ steps.ver.outputs.value }}.radioplugin
+
       - name: Compute checksums
+        if: steps.ver.outputs.skip != 'true'
         working-directory: dist
         run: |
-          shasum -a 256 LP-100A-App-${{ steps.ver.outputs.value }}.dmg > LP-100A-App-${{ steps.ver.outputs.value }}.dmg.sha256
-          cat LP-100A-App-${{ steps.ver.outputs.value }}.dmg.sha256
+          shasum -a 256 LP-100A-App-${{ steps.ver.outputs.value }}.dmg \
+            > LP-100A-App-${{ steps.ver.outputs.value }}.dmg.sha256
+          shasum -a 256 LP-100A-App-${{ steps.ver.outputs.value }}.radioplugin \
+            > LP-100A-App-${{ steps.ver.outputs.value }}.radioplugin.sha256
+          cat LP-100A-App-${{ steps.ver.outputs.value }}.dmg.sha256 \
+              LP-100A-App-${{ steps.ver.outputs.value }}.radioplugin.sha256
 
-      - name: Upload artifacts (always, even without a tag)
+      - name: Upload artifacts (workflow-scoped, for in-flight inspection)
+        if: steps.ver.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: LP-100A-App-${{ steps.ver.outputs.value }}
           path: |
             dist/LP-100A-App-*.dmg
             dist/LP-100A-App-*.dmg.sha256
+            dist/LP-100A-App-*.radioplugin
+            dist/LP-100A-App-*.radioplugin.sha256
           retention-days: 30
 
       - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.ver.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.ver.outputs.value }}
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           draft: false
-          prerelease: false
+          prerelease: ${{ inputs.prerelease == true }}
           generate_release_notes: true
           body: |
             ## LP-100A-App ${{ steps.ver.outputs.value }}
 
             macOS native client for the [LP-100A WebSocket Server](https://github.com/VU3ESV/LP-100A-Server).
+            Also installable into the [Amateur Radio Suite](https://github.com/VU3ESV/AmateurRadioSuite)
+            as `LP-100A-App-${{ steps.ver.outputs.value }}.radioplugin`.
 
-            ### Install
+            ### Install (standalone)
 
             1. Download `LP-100A-App-${{ steps.ver.outputs.value }}.dmg` below.
-            2. Open the DMG and drag **LP-100A.app** to `/Applications`.
-            3. **One-time Gatekeeper bypass** (this build is ad-hoc-signed, not Apple-notarized):
+            2. Open the DMG and drag **LP-100A-App.app** to `/Applications`.
+            3. **One-time Gatekeeper bypass** (ad-hoc-signed, not Apple-notarized):
                ```sh
-               xattr -d com.apple.quarantine /Applications/LP-100A.app
+               xattr -dr com.apple.quarantine /Applications/LP-100A-App.app
                ```
             4. Launch normally.
 
@@ -96,3 +167,5 @@ jobs:
           files: |
             dist/LP-100A-App-*.dmg
             dist/LP-100A-App-*.dmg.sha256
+            dist/LP-100A-App-*.radioplugin
+            dist/LP-100A-App-*.radioplugin.sha256
