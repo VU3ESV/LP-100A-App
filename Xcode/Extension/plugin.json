@@ -1,0 +1,12 @@
+{
+  "id": "org.vu3esv.radiosuite.LP100A",
+  "name": "LP-100A",
+  "version": "1.0.0",
+  "sdkVersion": "1.2",
+  "minHostVersion": "1.0",
+  "isolation": "out-of-process",
+  "capabilities": ["network.client", "notifications"],
+  "systemImage": "gauge",
+  "author": "VU3ESV",
+  "homepage": "https://github.com/VU3ESV/LP-100A-App"
+}
