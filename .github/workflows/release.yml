@@ -141,6 +141,38 @@ jobs:
             dist/LP-100A-App-*.radioplugin.sha256
           retention-days: 30
 
+      - name: Compose release notes
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          V: ${{ steps.ver.outputs.value }}
+          REPO: ${{ github.repository }}
+          # 'true' only when the signing + notary secrets are present — i.e. the build was
+          # Developer-ID signed and Apple-notarized. Otherwise it's an ad-hoc build.
+          NOTARIZED: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && secrets.NOTARY_PASSWORD != '' }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## LP-100A-App ${V}"
+            echo
+            echo "macOS native client for the [LP-100A WebSocket Server](https://github.com/VU3ESV/LP-100A-Server). Also installable into the [Amateur Radio Suite](https://github.com/VU3ESV/AmateurRadioSuite) as \`LP-100A-App-${V}.radioplugin\`."
+            echo
+            echo "### Install (standalone)"
+            echo
+            echo "1. Download \`LP-100A-App-${V}.dmg\` below."
+            echo "2. Open the DMG and drag **LP-100A-App.app** to \`/Applications\`."
+            if [ "${NOTARIZED}" = "true" ]; then
+              echo "3. Launch it — signed with Developer ID and **Apple-notarized**, so no Gatekeeper bypass is needed."
+            else
+              echo "3. **One-time Gatekeeper bypass** (this build is ad-hoc-signed, not Apple-notarized):"
+              echo "   \`\`\`sh"
+              echo "   xattr -dr com.apple.quarantine /Applications/LP-100A-App.app"
+              echo "   \`\`\`"
+              echo "4. Launch normally."
+            fi
+            echo
+            echo "See [README](https://github.com/${REPO}#install) and [ARCHITECTURE.md](https://github.com/${REPO}/blob/main/ARCHITECTURE.md)."
+          } > dist/RELEASE_NOTES.md
+
       - name: Create GitHub release
         if: steps.ver.outputs.skip != 'true'
         uses: softprops/action-gh-release@v3
@@ -151,25 +183,7 @@ jobs:
           draft: false
           prerelease: ${{ inputs.prerelease == true }}
           generate_release_notes: true
-          body: |
-            ## LP-100A-App ${{ steps.ver.outputs.value }}
-
-            macOS native client for the [LP-100A WebSocket Server](https://github.com/VU3ESV/LP-100A-Server).
-            Also installable into the [Amateur Radio Suite](https://github.com/VU3ESV/AmateurRadioSuite)
-            as `LP-100A-App-${{ steps.ver.outputs.value }}.radioplugin`.
-
-            ### Install (standalone)
-
-            1. Download `LP-100A-App-${{ steps.ver.outputs.value }}.dmg` below.
-            2. Open the DMG and drag **LP-100A-App.app** to `/Applications`.
-            3. **One-time Gatekeeper bypass** (ad-hoc-signed, not Apple-notarized):
-               ```sh
-               xattr -dr com.apple.quarantine /Applications/LP-100A-App.app
-               ```
-            4. Launch normally.
-
-            See [README](https://github.com/${{ github.repository }}#install) and
-            [ARCHITECTURE.md](https://github.com/${{ github.repository }}/blob/main/ARCHITECTURE.md).
+          body_path: dist/RELEASE_NOTES.md
           files: |
             dist/LP-100A-App-*.dmg
             dist/LP-100A-App-*.dmg.sha256
