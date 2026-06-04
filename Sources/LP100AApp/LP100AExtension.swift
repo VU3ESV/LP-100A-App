@@ -12,6 +12,9 @@ public enum LP100AExtension {
     @MainActor
     public static func rootView(defaults: UserDefaults? = nil) -> AnyView {
         if let defaults { AppDefaults.store = defaults }
-        return AnyView(ContentView(vm: MeterViewModel()))
+        // `embedded: true` renders the toolbar controls inline. A hosted .appex has no window
+        // title bar, so SwiftUI `.toolbar` items never appear; the standalone app (embedded:
+        // false) keeps its window toolbar.
+        return AnyView(ContentView(vm: MeterViewModel(), embedded: true))
     }
 }
