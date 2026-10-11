@@ -17,6 +17,28 @@ auto-cut on merge to `main` (tags `vX.Y.Z`).
   on every merge to `main`** (auto patch-bump of the latest `vX.Y.Z` tag), matching LP-700
   and the suite. Tag-push and manual dispatch still work.
 
+### Fixed
+- **Hosted plugin connects on its own.** Loaded in the Amateur Radio Suite (the `.appex`),
+  LP-100A now connects to the saved server as soon as it appears and opens the Connect sheet
+  only when no server has been configured yet. Previously it sat disconnected until the
+  operator opened the connection settings and pressed Connect on every launch. The standalone
+  window, the in-process plugin and the hosted extension now share one
+  `MeterViewModel.configuredServerURL` rule for "is a server configured". The hosted
+  extension keeps its URL in its own sandboxed defaults, so the Suite asks once even when the
+  standalone app is already set up. While hosted, the Connect sheet no longer offers **Quit**
+  (it would have terminated the Suite or the extension process), and a connect attempt that is
+  superseded while the saved server is unreachable no longer hijacks the newer connection.
+  Ported from LP-700-App ([#21](https://github.com/VU3ESV/LP-700-App/pull/21)).
+- **Auto-reconnect actually reconnects.** `WSClient`'s disconnect handler cancelled the task it
+  was running on before sleeping, so after a dropped connection, a server restart, or a launch
+  before the server was up no retry ever happened: the app showed Offline until the operator
+  reconnected by hand. Retries now run on their own task with the intended 0.5–10 s backoff,
+  the badge says Reconnecting (not Offline) while a retry is pending, and the backoff resets
+  on the first frame rather than on every attempt. `stop()` is final: a socket it cancelled, or
+  one a reconnect replaced, can no longer schedule a retry of its own. Regression tests connect
+  to a closed port and expect a second attempt, expect no retry after `stop()`, and expect no
+  retry when `stop()` lands while a handshake is still pending.
+
 ## [0.2.8] — 2026-06-02
 ### Added
 - **Out-of-process plugin** ([#3](https://github.com/VU3ESV/LP-100A-App/pull/3)): an

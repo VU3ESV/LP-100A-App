@@ -35,6 +35,12 @@ first time it runs (no `serverURL` configured yet):
 
 ![Connect sheet](screenshots/02-connection-sheet.png)
 
+> **In the Amateur Radio Suite** the plugin behaves the same way: the first
+> time it appears it asks for the server URL, and from then on it connects
+> on its own. The Suite plugin keeps its own copy of the URL (the
+> extension's sandbox), so configure it once there even if the standalone
+> app is already set up.
+
 1. Enter the URL of your LP-100A WebSocket server.
    - Local server on this Mac: `http://localhost:8088`
    - Pi or other host on the LAN: `http://raspberrypi.local:8088`,

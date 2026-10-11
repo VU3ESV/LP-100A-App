@@ -278,22 +278,22 @@ Boundary rules:
 
 ```
                        ┌─────────────┐
-                       │ disconnected│  (initial / after error)
+                       │ disconnected│  (initial / after stop())
                        └──────┬──────┘
                               │ start() / setBaseURL()
                        ┌──────▼──────┐
                        │ reconnecting│
                        └──────┬──────┘
-                              │ WS handshake OK
-                              │ + lastFrameAt = now
+                              │ first inbound frame
+                              │ (snapshot-on-connect)
                        ┌──────▼──────┐
        heartbeat       │  connected  │  ◄── frames reset lastFrameAt
        watchdog        └──┬──────────┘
        fires (>4s)       │             ↑
        OR socket close   │             │
                          ▼             │
-                  handleDisconnect ────┘ via reconnect with backoff
-                  (backoff 0.5→10s)
+                  handleDisconnect ────┘ retry on its own task
+                  (stays reconnecting; backoff 0.5→10s)
 ```
 
 The state-machine is small and sufficient. Specifics:
@@ -306,8 +306,11 @@ The state-machine is small and sufficient. Specifics:
   high-resolution timer, to keep wakeups cheap. 4 s timeout is 2× the
   server's default heartbeat_ms (2000); this matches the web client's
   behavior.
-- **Backoff** is 0.5, 1, 2, 4, 8, 10, 10, 10… seconds. Reset to 0.5 on a
-  successful connect.
+- **Backoff** is 0.5, 1, 2, 4, 8, 10, 10, 10… seconds. Reset to 0.5 when
+  the first frame arrives, not on `resume()`: a handshake that never
+  delivers a frame keeps backing off. The retry sleeps on its own task,
+  because the receive/watchdog task that detected the drop is cancelled by
+  then (sleeping there threw immediately and no retry ever ran).
 - **Sleep/wake.** `NSWorkspace.didWakeNotification` triggers a full
   `reconnect(serverURL:)` rather than just an inline `resync`. Slightly
   heavier than the proposal's wording but empirically more reliable when
@@ -349,7 +352,11 @@ The state-machine is small and sufficient. Specifics:
 
 ## 5. State persistence
 
-`UserDefaults` (suite: `com.vu3esv.lp100a-app`):
+`UserDefaults`. Each entry point has its own store, so `serverURL` is
+entered once per store: the standalone app uses its own domain
+(`com.vu3esv.lp100a-app`), the in-process plugin a per-plugin suite from
+`host.defaults(for:)`, and the hosted `.appex` the `UserDefaults.standard`
+of its sandbox container (`org.vu3esv.radiosuite.LP100A`). Keys:
 
 | Key                  | Type | Default                    |
 |----------------------|------|----------------------------|
@@ -373,7 +380,7 @@ Not yet wired (planned for follow-up):
 | Server unreachable on launch                     | `WSClient` enters `reconnecting`; UI pill yellow; backoff retries forever                   | Low — user can open Preferences and fix URL |
 | `/api/config` fetch fails                        | Falls back to `["normal", "vector"]` and `allowControl = true` (best-effort, log only)      | Low |
 | `/api/log-level` fetch fails                     | Picker shows last-known value (initial `"error"`); POST is fire-and-forget                  | Low |
-| WS drops mid-session                             | `handleDisconnect` → backoff reconnect; UI pill yellow then red briefly                     | Low |
+| WS drops mid-session                             | `handleDisconnect` → retry on its own task with backoff; pill stays yellow (Reconnecting) until the next attempt's first frame                     | Low |
 | Bad JSON frame                                   | `JSONDecoder` throws; emit `parseError`; OSLog warning; no disconnect                       | Low |
 | `ack ok:false`                                   | Status banner shown; banner auto-dismisses after 5 s                                        | Med — banner doesn't tie back to the issuing button (no per-button feedback) |
 | Mac sleeps for >2 s                              | Watchdog fires on wake → reconnect; or `NSWorkspace.didWakeNotification` triggers reconnect explicitly | Low |
@@ -383,7 +390,7 @@ Not yet wired (planned for follow-up):
 
 ## 7. Tests
 
-`swift test` runs 13 tests across two suites:
+`swift test` runs 20 tests across four suites:
 
 - **WireProtocolTests (7)** — telemetry/heartbeat/status/ack frames decode
   correctly; command/resync frames encode to the exact expected bytes;
@@ -391,11 +398,19 @@ Not yet wired (planned for follow-up):
 - **ScalingTests (6)** — power range caps and tick labels match the web
   client; lower-case `w` for Average mode is preserved (LCD convention);
   |Γ| derivation, R/X derivation, SWR-bar fraction edges.
+- **ServerURLTests (4)** — `MeterViewModel.configuredServerURL(_:)`, the rule
+  all three entry points (standalone bootstrap, in-process plugin, hosted
+  `.appex`) use to decide whether a saved URL is worth connecting to: host
+  required, whitespace ignored, scheme-only strings rejected.
+- **WSClientReconnectTests (3)** — connects to a closed port and expects a
+  second attempt; expects `stop()` to drop a pending retry; and, against a
+  TCP listener that never answers the handshake, expects `stop()` to be
+  final (no retry scheduled by the cancelled receive task).
 
 Not yet covered:
 
-- `WSClient` reconnect/backoff behavior. Hard to test deterministically
-  without a fake `URLSessionWebSocketTask`. Acceptable gap for v0.1.
+- `WSClient` heartbeat-watchdog and backoff *timing*. The retry itself is
+  covered above; exact delays would need a fake `URLSessionWebSocketTask`.
 - `MeterViewModel` peak decay loop. Time-dependent; could be tested with
   a clock abstraction in v0.2.
 - UI snapshot tests. Out of scope; visual review against the web client.
@@ -443,8 +458,11 @@ CI (`.github/workflows/release.yml`):
 
 - Wire protocol stability — frames are 1:1 with the server's
   PROPOSAL.md §4 contract; covered by tests.
-- Reconnect correctness — verified manually with `kill -STOP` /
-  `kill -CONT` on a local server, and by physically pulling the LAN.
+- Reconnect correctness — pinned by `WSClientReconnectTests` (closed port
+  retries; `stop()` is final, also while a handshake is pending). The
+  earlier manual `kill -STOP` / `kill -CONT` check passed only because the
+  wake/active handlers reconnected; the backoff retry itself never ran
+  until the hosted auto-connect change fixed it.
 - Memory growth — no caches, no buffers; `lastData` is a single struct
   replaced per frame.
 

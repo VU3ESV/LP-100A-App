@@ -87,6 +87,12 @@ To change servers later: click the shield icon in the toolbar, choose
 **File → Connect to Server… (⌘K)**, or open **Preferences (⌘,) → Server
 → Change Server…**. To disconnect cleanly, hit **⇧⌘D**.
 
+Loaded in the Amateur Radio Suite, the plugin behaves the same way: the
+first time it appears it asks for the server URL, and from then on it
+connects on its own. The Suite plugin keeps its own copy of the URL (the
+extension's sandbox), so configure it once there even if the standalone
+app is already set up.
+
 ## Build from source
 
 Requirements: macOS 13+, Xcode 15+ (or Xcode-CLT with Swift 5.9+).
@@ -148,7 +154,7 @@ LP-100A-App/
 │   ├── ViewModels/          # MeterViewModel
 │   ├── Views/               # ContentView, NormalView (ReadingCards), VectorView, SetupOverlay, KeypadView, ConnectionSheet, …
 │   └── MenuBar/             # MenuBarLabel + MenuBarContent popover
-├── Tests/LP100AAppTests/    # WireProtocol + scaling round-trips
+├── Tests/LP100AAppTests/    # WireProtocol + scaling round-trips, server-URL rule, WS reconnect
 ├── Resources/Info.plist     # bundle template (VERSION substituted at build time)
 ├── scripts/                 # build-app.sh, make-dmg.sh, make-icon.sh, grab-screenshot.sh
 └── .github/workflows/       # release.yml — builds DMG, attaches to release
