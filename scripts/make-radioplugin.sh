@@ -2,13 +2,22 @@
 # Build LP100AExtension.appex and package it as `LP100A.radioplugin` -- the installable
 # bundle the Amateur Radio Suite browses + installs (zip of plugin.json + the .appex).
 #
-#   ./scripts/make-radioplugin.sh            # -> dist/LP100A.radioplugin (+ its sha256)
+#   VERSION=0.2.10 ./scripts/make-radioplugin.sh   # -> dist/LP100A.radioplugin (+ its sha256)
+#
+# VERSION (default 0.0.0-dev) is stamped into both places the plugin reports a version, so
+# the plugin always carries the same version as the app release it ships with:
+#   - the .appex Info.plist (CFBundleShortVersionString / CFBundleVersion, through the
+#     MARKETING_VERSION / CURRENT_PROJECT_VERSION build settings) -- what `pluginkit` and
+#     System Settings > Extensions show;
+#   - plugin.json's "version" (the __VERSION__ placeholder) -- what the Suite's plugin
+#     manager shows and compares against its catalog's latestVersion.
 #
 # Running the installed plugin needs Developer-ID signing + extension approval; this
 # produces an ad-hoc-signed package suitable for the catalog/discovery flow and testing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+VERSION="${VERSION:-0.0.0-dev}"
 XCODE_DIR="Xcode"
 PROJECT="$XCODE_DIR/LP100APlugin.xcodeproj"
 SCHEME="LP100AExtension"
@@ -22,18 +31,26 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_
 echo "==> Generating Xcode project from project.yml"
 ( cd "$XCODE_DIR" && xcodegen generate )
 
-echo "==> Building $SCHEME (.appex)"
+echo "==> Building $SCHEME (.appex) -- version $VERSION"
 DERIVED="$(mktemp -d)"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
   -destination 'platform=macOS' -derivedDataPath "$DERIVED" \
+  MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION" \
   CODE_SIGNING_ALLOWED=NO build >/dev/null
 
 APPEX="$(/usr/bin/find "$DERIVED/Build/Products" -name 'LP100AExtension.appex' -maxdepth 3 | head -1)"
 [ -n "$APPEX" ] || { echo "ERROR: LP100AExtension.appex not found"; exit 1; }
 
+BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APPEX/Contents/Info.plist")"
+[ "$BUILT_VERSION" = "$VERSION" ] || {
+  echo "ERROR: .appex reports version '$BUILT_VERSION', expected '$VERSION'"; exit 1; }
+
 echo "==> Assembling $PKG"
 STAGE="$(mktemp -d)"
-cp "Xcode/Extension/plugin.json" "$STAGE/plugin.json"
+# Stamp the manifest with the same version as the app and the .appex.
+sed "s/__VERSION__/${VERSION}/g" "Xcode/Extension/plugin.json" > "$STAGE/plugin.json"
+grep -q "\"version\": \"${VERSION}\"" "$STAGE/plugin.json" || {
+  echo "ERROR: plugin.json version was not stamped (is the __VERSION__ placeholder intact?)"; exit 1; }
 cp -R "$APPEX" "$STAGE/"
 
 # Only manage our own package — do NOT wipe $DIST, which in a release pipeline also
@@ -48,6 +65,6 @@ PKG_ABS="$PWD/$PKG"
 rm -rf "$STAGE" "$DERIVED"
 
 SHA="$(shasum -a 256 "$PKG" | awk '{print $1}')"
-echo "OK: built $PKG"
+echo "OK: built $PKG (plugin version $VERSION)"
 echo "    sha256: $SHA"
-echo "    Add this to the suite catalog (docs/catalog/catalog.json) as the LP-100A entry."
+echo "    Update the suite catalog (docs/catalog/catalog.json) LP-100A entry: latestVersion, url, sha256."

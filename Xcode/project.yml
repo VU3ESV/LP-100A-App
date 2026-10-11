@@ -6,6 +6,13 @@
 #
 # The generated .xcodeproj is gitignored -- regenerate with:  (cd Xcode && xcodegen generate)
 # `scripts/make-radioplugin.sh` does this and packages the `.radioplugin`.
+#
+# Versioning: the extension carries the SAME version as the app release it ships with.
+# `info.properties` below make xcodegen write `$(MARKETING_VERSION)` /
+# `$(CURRENT_PROJECT_VERSION)` placeholders into Extension/Info.plist (tracked; regenerate
+# after editing this file), and scripts/make-radioplugin.sh + scripts/package-signed.sh pass
+# both settings as VERSION on the xcodebuild command line. plugin.json's "version" is
+# stamped from the same VERSION (its __VERSION__ placeholder) when the .radioplugin is packaged.
 
 name: LP100APlugin
 options:
@@ -34,6 +41,8 @@ targets:
       properties:
         CFBundleName: LP-100A
         CFBundleDisplayName: LP-100A
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         EXAppExtensionAttributes:
           EXExtensionPointIdentifier: org.vu3esv.radiosuite.plugin
     settings:
@@ -41,7 +50,10 @@ targets:
         # IMPORTANT: this bundle id is the plugin's identity -- it must match
         # `plugin.json`'s `id` so the suite correlates the manifest to the extension.
         PRODUCT_BUNDLE_IDENTIFIER: org.vu3esv.radiosuite.LP100A
-        MARKETING_VERSION: "1.0.0"
+        # Placeholders for a bare `xcodebuild` / Xcode GUI build; the scripts override both
+        # with the app's VERSION (see the Versioning note at the top).
+        MARKETING_VERSION: "0.0.0-dev"
+        CURRENT_PROJECT_VERSION: "0.0.0-dev"
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"      # ad-hoc for local dev; Developer-ID needed to ship
         ENABLE_HARDENED_RUNTIME: YES                            # required for notarization
