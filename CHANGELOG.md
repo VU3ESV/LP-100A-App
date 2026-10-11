@@ -16,6 +16,13 @@ auto-cut on merge to `main` (tags `vX.Y.Z`).
 - **Release on merge**: the release workflow was tag-only; it now also **auto-cuts a release
   on every merge to `main`** (auto patch-bump of the latest `vX.Y.Z` tag), matching LP-700
   and the suite. Tag-push and manual dispatch still work.
+- **The plugin reports the app's release version.** The `.appex`'s `CFBundleShortVersionString` /
+  `CFBundleVersion` and `plugin.json`'s `version` were fixed at 1.0 / 1.0.0 while the app shipped
+  as 0.2.x. Both are now stamped with the release `VERSION` by `scripts/make-radioplugin.sh` and
+  `scripts/package-signed.sh`, so the Suite's plugin manager, `pluginkit` and System Settings show
+  the same version as the app. Suite catalog note: the LP-100A entry's `latestVersion` (1.0.0) has
+  to move to the app's scheme, or the Suite will keep reporting an update as available. Ported from
+  LP-700-App ([#22](https://github.com/VU3ESV/LP-700-App/pull/22)).
 
 ### Fixed
 - **Hosted plugin connects on its own.** Loaded in the Amateur Radio Suite (the `.appex`),

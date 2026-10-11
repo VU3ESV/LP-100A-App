@@ -156,6 +156,9 @@ jobs:
 
       - name: Build plugin package (.appex / .radioplugin)
         if: steps.ver.outputs.skip != 'true'
+        env:
+          # Stamped into the .appex Info.plist and plugin.json so the plugin matches the app.
+          VERSION: ${{ steps.ver.outputs.value }}
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
           xcodebuild -version

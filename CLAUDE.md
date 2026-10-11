@@ -111,6 +111,15 @@ own; `ContentView(hosted: true)` stops the sheet offering Quit there.
 `WSClient` retries from its own `reconnectTask` (the receive/watchdog task
 that detects a drop is cancelled by then); `WSClientReconnectTests` pins it.
 
+**The plugin carries the same version as the app.** `scripts/make-radioplugin.sh`
+and `scripts/package-signed.sh` pass `VERSION` to xcodebuild as
+`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` (the extension's Info.plist
+holds `$(...)` placeholders that xcodegen emits from `Xcode/project.yml`)
+and stamp `plugin.json`'s `__VERSION__` when packaging. After a release,
+update the Suite's `docs/catalog/catalog.json` LP-100A entry (`latestVersion`,
+`url`, `sha256`): the Suite compares the installed plugin's version against
+it. The in-process `LP100APlugin.manifest` version is not used by the Suite.
+
 **Frames the app must understand** (from PROPOSAL.md §4 of the server):
 
 - `telemetry` — full snapshot under `data`. Always replaces local state.

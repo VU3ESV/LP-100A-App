@@ -424,6 +424,11 @@ Not yet covered:
   a placeholder PNG, ad-hoc signs (`codesign --sign -`).
 - **DMG** built by `scripts/make-dmg.sh`: copies the `.app` plus a
   `/Applications` symlink to a staging dir, runs `hdiutil create ... -format UDZO`.
+- **Plugin** (`.appex` + `.radioplugin`) built by `scripts/make-radioplugin.sh`
+  and embedded by `scripts/package-signed.sh`; both stamp the app's `VERSION`
+  into the extension's Info.plist (`MARKETING_VERSION` /
+  `CURRENT_PROJECT_VERSION`) and into `plugin.json`, so the plugin never
+  reports a version other than the release it ships with.
 - **Distribution**: ad-hoc-signed only. Users do `xattr -d com.apple.quarantine`
   once after install. Notarization is a TODO (requires Apple Developer
   Program enrollment).

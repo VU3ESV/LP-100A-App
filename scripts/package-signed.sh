@@ -32,12 +32,18 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_
 echo "==> Building standalone app (v$VERSION)"
 VERSION="$VERSION" ./scripts/build-app.sh
 
-echo "==> Building the extension (.appex)"
+echo "==> Building the extension (.appex) -- version $VERSION"
 ( cd Xcode && xcodegen generate >/dev/null )
 DERIVED="$(mktemp -d)"
+# Same VERSION as the app: the extension's Info.plist carries $(MARKETING_VERSION) and
+# $(CURRENT_PROJECT_VERSION) placeholders (see Xcode/project.yml).
 xcodebuild -project Xcode/LP100APlugin.xcodeproj -scheme LP100AExtension -configuration Release \
-  -destination 'platform=macOS' -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build >/dev/null
+  -destination 'platform=macOS' -derivedDataPath "$DERIVED" \
+  MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION" \
+  CODE_SIGNING_ALLOWED=NO build >/dev/null
 APPEX="$(find "$DERIVED/Build/Products" -name "$APPEX_NAME" | head -1)"
+BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APPEX/Contents/Info.plist")"
+[ "$BUILT_VERSION" = "$VERSION" ] || { echo "ERROR: .appex reports version '$BUILT_VERSION', expected '$VERSION'"; exit 1; }
 
 echo "==> Embedding $APPEX_NAME under Contents/Extensions/"
 mkdir -p "$APP/Contents/Extensions"
