@@ -54,7 +54,9 @@ LP-100A-App/
 │       └── Assets.xcassets      # AppIcon, accent color
 └── LP-100A-AppTests/
     ├── WireProtocolTests.swift  # JSON round-trips against fixtures from the server
-    └── ScalingTests.swift       # range → bar % math, |Γ| derivation, etc.
+    ├── ScalingTests.swift       # range → bar % math, |Γ| derivation, etc.
+    ├── ServerURLTests.swift     # configuredServerURL rule shared by the 3 entry points
+    └── WSClientReconnectTests.swift  # retry after a refused connection; stop() drops it
 ```
 
 The exact directory shape is provisional — settle it when the first code lands.
@@ -96,6 +98,18 @@ Default URL is `http://<host>:8088/`. The Mac app stores the user-configured
 host in `UserDefaults` under `serverURL`. Bonjour/mDNS discovery is a stretch
 goal — the server does not currently advertise itself, so v1 ships a manual
 host:port field in Preferences.
+
+**Three entry points, one connect rule.** The standalone window
+(`LP100AStandaloneApp.bootstrap()`), the in-process plugin
+(`LP100APlugin.activate()`) and the hosted `.appex` (`HostedRootView` in
+`LP100AExtension.swift`) each have to start the connection themselves;
+nothing else does. All three go through
+`MeterViewModel.configuredServerURL(_:)`: saved URL → `vm.start`, none →
+open the Connect sheet. The `.appex` keeps its URL in its own sandbox
+container (`org.vu3esv.radiosuite.LP100A`), so the Suite asks once on its
+own; `ContentView(hosted: true)` stops the sheet offering Quit there.
+`WSClient` retries from its own `reconnectTask` (the receive/watchdog task
+that detects a drop is cancelled by then); `WSClientReconnectTests` pins it.
 
 **Frames the app must understand** (from PROPOSAL.md §4 of the server):
 

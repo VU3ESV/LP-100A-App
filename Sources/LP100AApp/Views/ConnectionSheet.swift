@@ -4,6 +4,9 @@ import SwiftUI
 // server URL is configured, and on demand from the toolbar gear button.
 struct ConnectionSheet: View {
     @ObservedObject var vm: MeterViewModel
+    /// Offer Quit while nothing is configured yet. Only the standalone app may: hosted in the
+    /// Suite, `NSApplication.terminate` would kill the Suite or the extension process.
+    var canQuit: Bool = true
     @AppStorage("serverURL", store: AppDefaults.store) private var persistedURL: String = ""
 
     @State private var urlString: String = ""
@@ -112,7 +115,7 @@ struct ConnectionSheet: View {
 
     private var footer: some View {
         HStack {
-            if vm.connection != .disconnected || vm.hasConfiguredServer {
+            if !canQuit || vm.connection != .disconnected || vm.hasConfiguredServer {
                 Button("Cancel", action: onDismiss)
                     .keyboardShortcut(.cancelAction)
             } else {

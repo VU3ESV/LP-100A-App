@@ -6,6 +6,9 @@ struct ContentView: View {
     /// When hosted out-of-process in the Suite there is no window title bar, so `.toolbar`
     /// items never appear. In that case render the same controls inline (see `embeddedToolbar`).
     var embedded: Bool = false
+    /// True inside the Amateur Radio Suite (in-process plugin or the .appex). The process is
+    /// then the Suite's or the extension's, so the Connect sheet must never offer Quit.
+    var hosted: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,7 +26,7 @@ struct ContentView: View {
         .navigationTitle("LP-100A")
         .toolbar { if !embedded { mainToolbar } }
         .sheet(isPresented: $vm.connectionSheetOpen) {
-            ConnectionSheet(vm: vm) { vm.connectionSheetOpen = false }
+            ConnectionSheet(vm: vm, canQuit: !hosted) { vm.connectionSheetOpen = false }
         }
         // Fill the host: keep a sensible minimum for the standalone window, but expand to fill
         // the Amateur Radio Suite's host pane (out-of-process) instead of floating undersized.

@@ -30,15 +30,14 @@ public final class LP100APlugin: RadioPlugin {
     }
 
     public func makeRootView() -> AnyView {
-        AnyView(ContentView(vm: vm))
+        AnyView(ContentView(vm: vm, hosted: true))
     }
 
     public func activate() {
         guard !started else { vm.resync(); return }
         started = true
         let store = host.defaults(for: Self.metadata.id)
-        if let s = store.string(forKey: "serverURL"),
-           let url = URL(string: s), url.host?.isEmpty == false {
+        if let url = MeterViewModel.configuredServerURL(store.string(forKey: "serverURL") ?? "") {
             Task { await vm.start(serverURL: url) }
         } else {
             vm.connectionSheetOpen = true
