@@ -16,7 +16,10 @@ final class MeterViewModel: ObservableObject {
     @Published var allowControl: Bool = true
     @Published var serverURLString: String = ""
     @Published var connectionSheetOpen: Bool = false
+    /// Shown in the meter pane and the Connect sheet; set by a proxy 401, cleared once frames flow.
     @Published var lastConnectError: String?
+    /// Username of the proxy login stored in the Keychain (read without the secret), or `nil`.
+    @Published var proxyLoginUsername: String?
 
     /// True once the user has entered a server URL — drives whether the
     /// connection sheet opens automatically on launch.
@@ -52,6 +55,16 @@ final class MeterViewModel: ObservableObject {
     private var startGeneration = 0
     private var configClient: ConfigClient?
     private var listenTask: Task<Void, Never>?
+
+    /// In-memory copy of the Keychain proxy login, read at connect time once per server URL —
+    /// not per reconnect or frame. Save / Remove replace it directly.
+    private var proxyCredentials: ProxyCredentials?
+    private var proxyCredentialsSource: ProxyCredentialsSource = .unread
+    private enum ProxyCredentialsSource: Equatable {
+        case unread
+        case keychain(URL)   // read for this server URL
+        case saved           // set by Save / Remove; adopted by the next connection
+    }
 
     // UI publish coalescing. The server pushes telemetry at ~10 Hz on a
     // 100 ms poll cadence; a human can't read more than ~5 numbers/sec.
@@ -163,12 +176,22 @@ final class MeterViewModel: ObservableObject {
         let generation = startGeneration
         serverURLString = serverURL.absoluteString
         lastConnectError = nil
-        let cfg = ConfigClient(baseURL: serverURL)
+        let credentials = await proxyCredentials(for: serverURL)
+        guard generation == startGeneration else { return }
+        let cfg = ConfigClient(baseURL: serverURL, credentials: credentials)
         configClient = cfg
 
-        // Bootstrap from /api/config (best-effort)
-        let server = try? await cfg.fetchConfig()
-        let level = try? await cfg.fetchLogLevel()
+        // Bootstrap from /api/config (best-effort). A proxy 401 is surfaced; the WebSocket
+        // below then keeps retrying slowly until the login is fixed.
+        var server: ServerConfig?
+        var level: LogLevelConfig?
+        var authError: ProxyAuthError?
+        do {
+            server = try await cfg.fetchConfig()
+        } catch let error as ProxyAuthError {
+            authError = error
+        } catch {}
+        if authError == nil { level = try? await cfg.fetchLogLevel() }
         guard generation == startGeneration else {
             log.debug("start(\(serverURL.absoluteString, privacy: .public)) superseded — dropping")
             return
@@ -179,8 +202,9 @@ final class MeterViewModel: ObservableObject {
             allowControl = server.allowControl
         }
         if let level { serverLogLevel = level.level }
+        if let authError { lastConnectError = authError.localizedDescription }
 
-        let ws = WSClient(baseURL: serverURL)
+        let ws = WSClient(baseURL: serverURL, credentials: credentials)
         self.ws = ws
         await ws.start()
         listenTask?.cancel()
@@ -231,16 +255,82 @@ final class MeterViewModel: ObservableObject {
         guard let url = URL(string: urlString), url.host?.isEmpty == false else {
             return .failure("Invalid URL")
         }
-        let probe = url.appendingPathComponent("/healthz")
+        var probe = URLRequest(url: url.appendingPathComponent("/healthz"))
+        let sentCredentials = ProxyAuth.authorize(&probe, with: await proxyCredentials(for: url))
         do {
-            let (_, resp) = try await URLSession.shared.data(from: probe)
+            let (_, resp) = try await URLSession.shared.data(for: probe)
             if let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
                 return .ok
+            }
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if let authError = ProxyAuthError(httpStatus: status, credentialsSent: sentCredentials) {
+                return .failure(authError.summary)
             }
             return .failure("Server returned non-2xx")
         } catch {
             return .failure(error.localizedDescription)
         }
+    }
+
+    // MARK: - Proxy login (Keychain)
+
+    /// The proxy login to send to `url`. Never touches the Keychain for http/ws URLs (nothing
+    /// would be sent); otherwise reads it once per server URL, off the main actor because the
+    /// read can wait on a Keychain prompt.
+    private func proxyCredentials(for url: URL) async -> ProxyCredentials? {
+        guard ProxyAuth.allowsCredentials(for: url) else { return nil }
+        switch proxyCredentialsSource {
+        case .saved:
+            proxyCredentialsSource = .keychain(url)
+        case .keychain(let loadedFor) where loadedFor == url:
+            break
+        default:
+            let loaded = await Task.detached { ProxyKeychain.load() }.value
+            // A Save / Remove that landed while the Keychain was being read wins.
+            if proxyCredentialsSource != .saved { proxyCredentials = loaded }
+            proxyCredentialsSource = .keychain(url)
+        }
+        return proxyCredentials
+    }
+
+    /// Refresh `proxyLoginUsername` from the Keychain without reading the secret (no prompt).
+    func refreshProxyLoginStatus() async {
+        proxyLoginUsername = await Task.detached { ProxyKeychain.storedUsername() }.value
+    }
+
+    enum ProxyLoginError: LocalizedError {
+        case invalidUsername, emptyPassword
+        var errorDescription: String? {
+            switch self {
+            case .invalidUsername: return "Enter a username without a colon."
+            case .emptyPassword: return "Enter the password."
+            }
+        }
+    }
+
+    /// Save the proxy login to the Keychain (update, else add). The next connection attempt
+    /// uses it; nothing is reconnected here.
+    func saveProxyLogin(username: String, password: String) async throws {
+        let user = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !user.isEmpty, !user.contains(":") else { throw ProxyLoginError.invalidUsername }
+        guard !password.isEmpty else { throw ProxyLoginError.emptyPassword }
+        let credentials = ProxyCredentials(username: user, password: password)
+        try await Task.detached { try ProxyKeychain.save(credentials) }.value
+        await useProxyCredentials(credentials)
+        proxyLoginUsername = user
+    }
+
+    func removeProxyLogin() async throws {
+        try await Task.detached { try ProxyKeychain.remove() }.value
+        await useProxyCredentials(nil)
+        proxyLoginUsername = nil
+    }
+
+    private func useProxyCredentials(_ credentials: ProxyCredentials?) async {
+        proxyCredentials = credentials
+        proxyCredentialsSource = .saved
+        await ws?.setCredentials(credentials)
+        await configClient?.setCredentials(credentials)
     }
 
     // MARK: - Commands
@@ -276,9 +366,11 @@ final class MeterViewModel: ObservableObject {
 
     func setLogLevel(_ level: String) async {
         guard let configClient else { return }
-        if let updated = try? await configClient.setLogLevel(level) {
-            serverLogLevel = updated.level
-        }
+        do {
+            serverLogLevel = try await configClient.setLogLevel(level).level
+        } catch let error as ProxyAuthError {
+            lastConnectError = error.localizedDescription
+        } catch {}
     }
 
     // MARK: - Event handling
@@ -287,6 +379,9 @@ final class MeterViewModel: ObservableObject {
         switch event {
         case .stateChanged(let s):
             connection = s
+            if s == .connected { lastConnectError = nil }
+        case .authFailed(let error):
+            lastConnectError = error.localizedDescription
         case .frame(let frame):
             applyFrame(frame)
         case .parseError(let msg):

@@ -83,6 +83,22 @@ server (e.g. `http://localhost:8088` for a local server, or
 `http://raspberrypi.local:8088` for a Pi on the LAN), tap **Test
 connection** to probe `/healthz`, then **Connect**.
 
+**Through the authenticating proxy** (TLS + HTTP Basic auth in front of the
+server, e.g. Caddy on the Pi): use the `https://` URL, e.g.
+`https://192.168.86.43:8088` — the app derives `wss://…/ws` from it. In the
+Connect sheet, fill in **Proxy login** (username, default `operator`, and
+password) and press **Save to Keychain**; the next connection uses it. The
+login is a generic-password item in the login Keychain with service
+`ShackProxy` and the username as its account, so one created with
+`security add-generic-password -s ShackProxy -a operator -w` works too (macOS
+then asks whether LP-100A may use it; choose **Always Allow**). The app sends it as an
+`Authorization: Basic` header on the WebSocket upgrade and on every HTTP call,
+**only over `https`/`wss` — never over plain `http`/`ws`**, even when a login is
+stored. A 401 shows *Proxy login required* (nothing was sent) or *Proxy login
+rejected* (the stored login was refused) above the meter. The proxy's
+certificate must be trusted by macOS (e.g. a private CA added to the login
+Keychain); the app does no pinning of its own.
+
 To change servers later: click the shield icon in the toolbar, choose
 **File → Connect to Server… (⌘K)**, or open **Preferences (⌘,) → Server
 → Change Server…**. To disconnect cleanly, hit **⇧⌘D**.
@@ -127,6 +143,9 @@ TODO item.
   inbound frame for >4 s = drop and reconnect).
 - A `ConfigClient` actor handles `GET /api/config` (bootstrap) and
   `GET/POST /api/log-level` (SETUP overlay).
+- `ProxyAuth` decides when the Keychain proxy login (`ProxyKeychain`,
+  service `ShackProxy`) is attached: `https`/`wss` only. It is read at connect
+  time, once per server URL, and cached in memory.
 - The wire protocol matches the server's PROPOSAL.md §4 verbatim:
   `telemetry` / `heartbeat` / `status` / `ack` server frames, `command` /
   `resync` client frames.
@@ -150,11 +169,11 @@ LP-100A-App/
 ├── Sources/LP100AApp/
 │   ├── App.swift            # @main, scenes (WindowGroup, Settings, MenuBarExtra)
 │   ├── Theme/               # Tokens (functional bar gradients), Panel/CompactPanel/PanelHeader primitives
-│   ├── Net/                 # WireProtocol, WSClient, ConfigClient
+│   ├── Net/                 # WireProtocol, WSClient, ConfigClient, ProxyAuth, ProxyKeychain
 │   ├── ViewModels/          # MeterViewModel
 │   ├── Views/               # ContentView, NormalView (ReadingCards), VectorView, SetupOverlay, KeypadView, ConnectionSheet, …
 │   └── MenuBar/             # MenuBarLabel + MenuBarContent popover
-├── Tests/LP100AAppTests/    # WireProtocol + scaling round-trips, server-URL rule, WS reconnect
+├── Tests/LP100AAppTests/    # WireProtocol + scaling round-trips, server-URL rule, WS reconnect, proxy auth
 ├── Resources/Info.plist     # bundle template (VERSION substituted at build time)
 ├── scripts/                 # build-app.sh, make-dmg.sh, make-icon.sh, grab-screenshot.sh
 └── .github/workflows/       # release.yml — builds DMG, attaches to release
@@ -174,8 +193,10 @@ fixtures are inlined.
 
 ## Limitations
 
-- **No authentication.** The server is LAN-only by design; this client
-  follows suit.
+- **Authentication only through a proxy.** The server itself is LAN-only
+  with no login; put an authenticating TLS proxy in front of it and use the
+  Proxy login (see [Configure](#configure)). Over plain `http` the app sends
+  no credentials.
 - **Mode tracking is local.** The serial protocol gives no readback of the
   meter's current peak/avg/tune state, so the app counts the `M` presses
   it has sent. After a meter restart, use the SETUP overlay's "Re-align

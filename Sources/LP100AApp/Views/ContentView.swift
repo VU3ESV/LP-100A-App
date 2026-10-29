@@ -110,6 +110,9 @@ struct ContentView: View {
 
     private var meterPane: some View {
         VStack(spacing: 10) {
+            if let error = vm.lastConnectError {
+                BannerLabel(text: error)
+            }
             if let banner = vm.statusBanner {
                 BannerLabel(text: banner)
             }
