@@ -83,7 +83,10 @@ struct ConnectionSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            TextField("http://host:8088", text: $urlString, onCommit: connect)
+            // No onCommit: on macOS it also fires when the field loses focus, so clicking the
+            // username / password field connected and closed the sheet. Return still connects
+            // through the Connect button's .defaultAction shortcut.
+            TextField("http://host:8088", text: $urlString)
                 .textFieldStyle(.roundedBorder)
                 .disableAutocorrection(true)
                 .onChange(of: urlString) { _ in testStatus = .idle }
