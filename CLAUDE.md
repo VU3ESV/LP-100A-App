@@ -56,7 +56,8 @@ LP-100A-App/
     ├── WireProtocolTests.swift  # JSON round-trips against fixtures from the server
     ├── ScalingTests.swift       # range → bar % math, |Γ| derivation, etc.
     ├── ServerURLTests.swift     # configuredServerURL rule shared by the 3 entry points
-    └── WSClientReconnectTests.swift  # retry after a refused connection; stop() drops it
+    ├── WSClientReconnectTests.swift  # retry after a refused connection; stop() drops it
+    └── ProxyAuthTests.swift     # Basic auth https/wss-only, base64, 401 required/rejected
 ```
 
 The exact directory shape is provisional — settle it when the first code lands.
@@ -98,6 +99,20 @@ Default URL is `http://<host>:8088/`. The Mac app stores the user-configured
 host in `UserDefaults` under `serverURL`. Bonjour/mDNS discovery is a stretch
 goal — the server does not currently advertise itself, so v1 ships a manual
 host:port field in Preferences.
+
+**Authenticating proxy.** The server may sit behind a TLS reverse proxy
+(Caddy, private "Shack CA") that requires HTTP Basic auth (realm
+`StationMonitor2`, 401 otherwise, also on the WS upgrade) and 403s a
+mismatched `Origin`. The login is a Keychain generic password, service
+`ShackProxy`, account = username (`Net/ProxyKeychain.swift`), read once per
+server URL at connect time and cached in `MeterViewModel`. `Net/ProxyAuth.swift`
+attaches `Authorization: Basic …` **only for `https`/`wss`** — never over
+`http`/`ws`. `WSClient` maps a 401 on the upgrade (the failed task's
+`HTTPURLResponse`) and `ConfigClient` a 401 on HTTP to `ProxyAuthError`
+`.loginRequired` (nothing sent) / `.loginRejected` (sent and refused); a 401
+retries at the 10 s maximum backoff. Never send `Origin`, never add pinning,
+custom trust or ATS exceptions (the CA is trusted system-wide), never log the
+password. `ProxyAuthTests` pins the rules.
 
 **Three entry points, one connect rule.** The standalone window
 (`LP100AStandaloneApp.bootstrap()`), the in-process plugin
@@ -191,7 +206,8 @@ What is **not** required to match pixel-for-pixel:
   when the LCD shows real values. We keep Normal and Vector for the same
   reason. If the user enables additional `views` in the server config, the
   app should hide the unsupported ones rather than render broken data.
-- **Authenticate.** LAN-only, network-trust deployment per the server's
-  non-goals. Document it in the README; don't bake in a login flow.
+- **Authenticate against the server itself.** The server is LAN-only with no
+  login, per its non-goals. The only login is the proxy's HTTP Basic auth
+  above, sent over TLS only.
 
 See [PROPOSAL.md](PROPOSAL.md) for the full design.

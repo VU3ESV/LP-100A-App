@@ -12,7 +12,17 @@ struct ConnectionSheet: View {
     @State private var urlString: String = ""
     @State private var testStatus: TestStatus = .idle
     @State private var testTask: Task<Void, Never>?
+    // Proxy login. The stored password is never read back into the form.
+    @State private var proxyUser: String = "operator"
+    @State private var proxyPassword: String = ""
+    @State private var proxyBusy = false
+    @State private var proxyMessage: ProxyMessage?
     var onDismiss: () -> Void
+
+    struct ProxyMessage: Equatable {
+        var text: String
+        var isError: Bool
+    }
 
     enum TestStatus: Equatable {
         case idle
@@ -29,6 +39,7 @@ struct ConnectionSheet: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 fieldSection
+                proxySection
                 hintSection
             }
             .padding(20)
@@ -40,6 +51,10 @@ struct ConnectionSheet: View {
         .frame(width: 460)
         .onAppear {
             urlString = vm.serverURLString.nilIfEmpty ?? persistedURL.nilIfEmpty ?? "http://localhost:8088"
+            Task { @MainActor in
+                await vm.refreshProxyLoginStatus()
+                if let stored = vm.proxyLoginUsername { proxyUser = stored }
+            }
         }
     }
 
@@ -90,6 +105,67 @@ struct ConnectionSheet: View {
                 Spacer()
 
                 statusLabel
+            }
+        }
+    }
+
+    /// HTTP Basic login for an authenticating TLS proxy in front of the server. Kept in the
+    /// login Keychain (service "ShackProxy"); sent only to https:// servers.
+    private var proxySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Proxy login")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let stored = vm.proxyLoginUsername {
+                    Label("Stored for \(stored)", systemImage: "key.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                } else {
+                    Text("None stored")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("Username", text: $proxyUser)
+                    .textFieldStyle(.roundedBorder)
+                    .disableAutocorrection(true)
+                    .frame(width: 140)
+                SecureField(vm.proxyLoginUsername == nil ? "Password" : "New password",
+                            text: $proxyPassword)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .onChange(of: proxyUser) { proxyMessage = nil }
+            .onChange(of: proxyPassword) { proxyMessage = nil }
+
+            HStack(spacing: 8) {
+                Button("Save to Keychain") { Task { await saveProxyLogin() } }
+                    .disabled(proxyBusy || proxyUser.trimmingCharacters(in: .whitespaces).isEmpty
+                              || proxyPassword.isEmpty)
+                Button("Remove", action: removeProxyLogin)
+                    .disabled(proxyBusy || vm.proxyLoginUsername == nil)
+                Spacer()
+                if let proxyMessage {
+                    Text(proxyMessage.text)
+                        .font(.caption)
+                        .foregroundStyle(proxyMessage.isError ? .orange : .green)
+                        .lineLimit(1)
+                }
+            }
+
+            Text("Sent only to https:// servers, e.g. an authenticating proxy at https://host:8088 — never over plain http.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let error = vm.lastConnectError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -177,8 +253,41 @@ struct ConnectionSheet: View {
         }
         persistedURL = trimmed
         Task {
+            // A password typed but not yet saved is saved first, so this connection uses it.
+            if !proxyPassword.isEmpty {
+                guard await saveProxyLogin() else { return }
+            }
             await vm.reconnect(serverURL: url)
             onDismiss()
+        }
+    }
+
+    @discardableResult
+    private func saveProxyLogin() async -> Bool {
+        proxyBusy = true
+        defer { proxyBusy = false }
+        do {
+            try await vm.saveProxyLogin(username: proxyUser, password: proxyPassword)
+            proxyPassword = ""
+            proxyMessage = ProxyMessage(text: "Saved to Keychain", isError: false)
+            return true
+        } catch {
+            proxyMessage = ProxyMessage(text: error.localizedDescription, isError: true)
+            return false
+        }
+    }
+
+    private func removeProxyLogin() {
+        proxyBusy = true
+        Task { @MainActor in
+            defer { proxyBusy = false }
+            do {
+                try await vm.removeProxyLogin()
+                proxyPassword = ""
+                proxyMessage = ProxyMessage(text: "Removed", isError: false)
+            } catch {
+                proxyMessage = ProxyMessage(text: error.localizedDescription, isError: true)
+            }
         }
     }
 }

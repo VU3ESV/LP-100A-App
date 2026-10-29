@@ -51,6 +51,14 @@ first time it runs (no `serverURL` configured yet):
 3. Click **Connect** (or press **Enter**). The sheet closes and the app
    opens a WebSocket to the server, requesting an immediate snapshot.
 
+**Behind the authenticating proxy** (TLS + login in front of the server),
+enter its `https://` URL, e.g. `https://192.168.86.43:8088`, and fill in
+**Proxy login** in the same sheet: username (default `operator`), password,
+**Save to Keychain**. The login is stored in your login Keychain as
+`ShackProxy` (**Remove** deletes it); the sheet shows which username is
+stored but never the password. It is sent only to `https://` servers, never
+over plain `http`. The proxy's certificate must be trusted by macOS.
+
 If the server is unreachable, the connection badge in the toolbar will
 show **Reconnecting** (yellow) and retry with exponential backoff
 (0.5 s → 10 s) until either the server appears or you change the URL via
@@ -321,6 +329,8 @@ cycle.
 | Connection drops every minute | Mac sleeping or networking flapping | Check the connection badge — it should auto-reconnect; otherwise check the server logs |
 | Power-mode suffix shows `W` when meter shows `w` | Mode-cycle drift | Open SETUP overlay, click the actual current mode in the **Re-align with meter** row |
 | Menu-bar item not visible | Disabled in Preferences | Preferences → Display → toggle on; relaunch app |
+| "Proxy login required (HTTP 401)" | No login stored, or the URL is `http://` (the login is never sent there) | Use the `https://` URL and save a **Proxy login** in the Connect sheet (⌘K) |
+| "Proxy login rejected (HTTP 401)" | Wrong username or password | Save the correct **Proxy login** in the Connect sheet, then **Connect** |
 
 ---
 
@@ -354,8 +364,9 @@ time to open them before the screenshot fires.
 
 - **No telemetry collection.** The app makes outbound network
   connections only to the server URL you configured.
-- **No authentication.** Per the server's design, deploy the server on
-  a trusted LAN; the app inherits that trust model.
+- **Authentication only through a proxy.** The server has no login; behind
+  an authenticating TLS proxy the app sends the Keychain **Proxy login**
+  (`ShackProxy`) over `https`/`wss` only — never over plain `http`/`ws`.
 - **No background data**. UserDefaults stores only the server URL, the
   notification toggle, and the menu-bar toggle.
 

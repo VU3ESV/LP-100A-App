@@ -8,6 +8,14 @@ auto-cut on merge to `main` (tags `vX.Y.Z`).
 ## [Unreleased]
 
 ### Added
+- **Connect through an authenticating TLS proxy.** Point the app at the proxy's `https://`
+  URL (e.g. `https://192.168.86.43:8088`; `wss://…/ws` is derived) and save a **Proxy login**
+  in the Connect sheet. The login lives in the login Keychain (generic password, service
+  `ShackProxy`, account = username) and is sent as `Authorization: Basic` on the WebSocket
+  upgrade and every HTTP call, **only over `https`/`wss`, never over plain `http`/`ws`**.
+  A 401 shows "Proxy login required" (nothing sent) or "Proxy login rejected" (refused) and
+  retries at the slow 10 s backoff. The app relies on system trust for the proxy's
+  certificate (no pinning) and sends no `Origin` header.
 - **Plugin build & release pipeline** ([CONVERTING-A-PLUGIN.md §7](https://github.com/VU3ESV/AmateurRadioSuite/blob/main/docs/CONVERTING-A-PLUGIN.md)):
   CI now builds the `.appex`/`.radioplugin` on every PR, and each release attaches
   `LP-100A-App-<version>.radioplugin` (+ `.sha256`) alongside the `.dmg`.

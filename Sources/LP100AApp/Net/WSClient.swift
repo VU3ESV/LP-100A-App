@@ -14,14 +14,23 @@ actor WSClient {
         case stateChanged(ConnectionState)
         case frame(ServerFrame)
         case parseError(String)
+        /// The proxy answered the WebSocket upgrade with 401.
+        case authFailed(ProxyAuthError)
     }
 
     private var task: URLSessionWebSocketTask?
     private var session: URLSession
     private var baseURL: URL
+    /// Proxy login for the upgrade request; only ever sent to `wss` (see ProxyAuth).
+    private var credentials: ProxyCredentials?
+    /// Whether the current task's upgrade request carried an `Authorization` header.
+    private var taskSentCredentials = false
     private var state: ConnectionState = .disconnected
     private var backoffMs: UInt64 = 500
     private let maxBackoffMs: UInt64 = 10_000
+    /// After a 401 the same login is refused again until the operator changes it (Connect in
+    /// the sheet reconnects at once), so retry at the slowest rate instead of ramping up.
+    private let authFailureBackoffMs: UInt64 = 10_000
     private let heartbeatTimeoutNs: UInt64 = 4_000_000_000
     private var lastFrameAt: ContinuousClock.Instant = .now
     private var receiveTask: Task<Void, Never>?
@@ -47,8 +56,9 @@ actor WSClient {
     // scan — no JSON decode needed to discriminate.
     private static let telemetryHint = "\"power_w\""
 
-    init(baseURL: URL, session: URLSession = .shared) {
+    init(baseURL: URL, credentials: ProxyCredentials? = nil, session: URLSession = .shared) {
         self.baseURL = baseURL
+        self.credentials = credentials
         self.session = session
         let (stream, cont) = AsyncStream.makeStream(of: Event.self)
         self.events = stream
@@ -59,6 +69,11 @@ actor WSClient {
         guard url != baseURL else { return }
         baseURL = url
         await reconnectNow()
+    }
+
+    /// Use `credentials` from the next connection attempt on (the current socket is kept).
+    func setCredentials(_ credentials: ProxyCredentials?) {
+        self.credentials = credentials
     }
 
     func start() {
@@ -99,8 +114,9 @@ actor WSClient {
 
     private func connectLoop() async {
         emit(.stateChanged(.reconnecting))
-        let wsURL = wsURL(from: baseURL)
-        let new = session.webSocketTask(with: wsURL)
+        let request = Self.upgradeRequest(baseURL: baseURL, credentials: credentials)
+        taskSentCredentials = request.value(forHTTPHeaderField: "Authorization") != nil
+        let new = session.webSocketTask(with: request)
         task = new
         new.resume()
         lastFrameAt = .now
@@ -200,6 +216,10 @@ actor WSClient {
         // Only the current socket's failure counts. A socket that stop() / reconnectNow()
         // already dropped or replaced must not schedule a retry for a client nobody wants.
         guard failed === task else { return }
+        // A rejected upgrade leaves the HTTP response on the failed task.
+        let status = (failed.response as? HTTPURLResponse)?.statusCode ?? 0
+        let authError = ProxyAuthError(httpStatus: status, credentialsSent: taskSentCredentials)
+        if let authError { emit(.authFailed(authError)) }
         task?.cancel(with: .abnormalClosure, reason: nil)
         task = nil
         receiveTask?.cancel()
@@ -209,7 +229,7 @@ actor WSClient {
         // A retry is pending, so the client is reconnecting, not disconnected (that is what
         // stop() reports). Emit only on change: each attempt then yields one `.reconnecting`.
         if state != .reconnecting { emit(.stateChanged(.reconnecting)) }
-        let delay = backoffMs
+        let delay = authError == nil ? backoffMs : max(backoffMs, authFailureBackoffMs)
         backoffMs = min(backoffMs * 2, maxBackoffMs)
         // This method runs on the receive or watchdog task that was just cancelled above.
         // Sleeping here threw immediately and `Task.isCancelled` was true, so the retry never
@@ -227,7 +247,16 @@ actor WSClient {
         continuation.yield(event)
     }
 
-    private func wsURL(from base: URL) -> URL {
+    /// The upgrade request for `baseURL`'s `/ws`: the proxy login is attached only for `wss`.
+    /// No `Origin` header is set — the proxy refuses a mismatched Origin, and native clients
+    /// send none.
+    static func upgradeRequest(baseURL: URL, credentials: ProxyCredentials?) -> URLRequest {
+        var request = URLRequest(url: wsURL(from: baseURL))
+        ProxyAuth.authorize(&request, with: credentials)
+        return request
+    }
+
+    static func wsURL(from base: URL) -> URL {
         var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)!
         switch comps.scheme {
         case "https": comps.scheme = "wss"
