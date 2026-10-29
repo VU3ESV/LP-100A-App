@@ -8,6 +8,7 @@ auto-cut on merge to `main` (tags `vX.Y.Z`).
 ## [Unreleased]
 
 ### Fixed
+- **Release stapling is retried** (4 tries, 20 s apart): one dropped Apple CloudKit connection (exit 68) no longer fails the release.
 - **The Connect sheet no longer closes when you click the username or password field.** The
   URL field used `onCommit`, which on macOS also fires when the field loses focus, so moving to
   the Proxy login connected and closed the sheet. Return still connects (the Connect button is
