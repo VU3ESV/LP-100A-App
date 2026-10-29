@@ -8,6 +8,10 @@ auto-cut on merge to `main` (tags `vX.Y.Z`).
 ## [Unreleased]
 
 ### Fixed
+- **The Connect sheet no longer closes when you click the username or password field.** The
+  URL field used `onCommit`, which on macOS also fires when the field loses focus, so moving to
+  the Proxy login connected and closed the sheet. Return still connects (the Connect button is
+  the default action).
 - **Proxy login: a pasted password no longer keeps its trailing line break.** Save now drops
   leading/trailing newlines and refuses other control characters. Before, a copy from a terminal
   stored a wrong password in the shared `ShackProxy` Keychain item and every app got
