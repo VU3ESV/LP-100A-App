@@ -80,7 +80,7 @@ jobs:
   release:
     needs: gate
     if: needs.gate.outputs.skip != 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
