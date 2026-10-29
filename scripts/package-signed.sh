@@ -97,6 +97,16 @@ notarize() {  # $1 = path to a .zip or .dmg to submit
   xcrun notarytool submit "$1" \
     --apple-id "$NOTARY_APPLE_ID" --team-id "${NOTARY_TEAM_ID:-}" --password "$NOTARY_PASSWORD" --wait
 }
+# staple with a few retries — fetching the fresh ticket from Apple's CloudKit can drop the
+# connection ("The network connection was lost.", exit 68) or not see the ticket yet (exit 65)
+# even after notarization is Accepted, which would otherwise fail the whole release.
+staple() {
+  local n=1
+  until xcrun stapler staple "$1"; do
+    [ "$n" -ge 4 ] && return 1
+    echo "  stapler attempt $n failed — retrying in 20s…" >&2; sleep 20; n=$((n + 1))
+  done
+}
 HAVE_NOTARY=0
 if [ -n "$IDENTITY" ] && [ -n "${NOTARY_APPLE_ID:-}" ] && [ -n "${NOTARY_PASSWORD:-}" ]; then
   HAVE_NOTARY=1
@@ -109,7 +119,7 @@ if [ "$HAVE_NOTARY" = 1 ]; then
   AZIP="$(mktemp -d)/app.zip"
   ditto -c -k --keepParent "$APP" "$AZIP"
   notarize "$AZIP"
-  xcrun stapler staple "$APP"
+  staple "$APP"
 fi
 
 echo "==> Building DMG"
@@ -125,7 +135,7 @@ fi
 if [ "$HAVE_NOTARY" = 1 ]; then
   echo "==> Notarizing the DMG + stapling (a few minutes)…"
   notarize "$DMG"
-  xcrun stapler staple "$DMG"
+  staple "$DMG"
   echo "==> Notarized + stapled (app + DMG)."
 else
   echo "==> Skipping notarization (no NOTARY_* secrets) — signed but not notarized."
