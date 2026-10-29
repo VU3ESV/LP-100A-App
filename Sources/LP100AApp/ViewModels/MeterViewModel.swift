@@ -299,11 +299,12 @@ final class MeterViewModel: ObservableObject {
     }
 
     enum ProxyLoginError: LocalizedError {
-        case invalidUsername, emptyPassword
+        case invalidUsername, emptyPassword, invalidPassword
         var errorDescription: String? {
             switch self {
             case .invalidUsername: return "Enter a username without a colon."
             case .emptyPassword: return "Enter the password."
+            case .invalidPassword: return "The password contains a line break or control character. Paste just the password."
             }
         }
     }
@@ -314,6 +315,7 @@ final class MeterViewModel: ObservableObject {
         let user = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !user.isEmpty, !user.contains(":") else { throw ProxyLoginError.invalidUsername }
         guard !password.isEmpty else { throw ProxyLoginError.emptyPassword }
+        guard let password = ProxyAuth.normalizedPassword(password) else { throw ProxyLoginError.invalidPassword }
         let credentials = ProxyCredentials(username: user, password: password)
         try await Task.detached { try ProxyKeychain.save(credentials) }.value
         await useProxyCredentials(credentials)
